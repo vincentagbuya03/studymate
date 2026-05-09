@@ -1,0 +1,47 @@
+name: studymate
+description: "A new Flutter project."
+publish_to: "none"
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.11.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_local_notifications: ^17.0.0
+  timezone: ^0.9.0
+  shared_preferences: ^2.0.0
+  sqflite: ^2.3.0
+  table_calendar: ^3.0.9
+  flutter_slidable: ^3.0.0
+  percent_indicator: ^4.2.3
+  google_fonts: ^6.1.0
+  intl: ^0.19.0
+  path: ^1.9.1
+  cupertino_icons: ^1.0.8
+  flutter_svg: ^2.2.4
+  lottie: ^3.3.3
+  sqflite_common_ffi: ^2.4.0+3
+  sqflite_common_ffi_web: ^1.1.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.4
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/iskolar_icon_only.svg
+    - assets/lottie/
+    - assets/images/
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/launcher_icon.png"
+  adaptive_icon_background: "#2563EB"
+  adaptive_icon_foreground: "assets/launcher_icon.png"
