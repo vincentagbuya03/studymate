@@ -192,5 +192,47 @@
             });
         });
     </script>
+
+    <!-- Firebase Analytics Integration -->
+    <script type="module">
+        // Import the functions you need from the SDKs you need
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getAnalytics, logEvent } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-analytics.js";
+
+        // TODO: Replace with your project's customized Firebase configuration
+        const firebaseConfig = {
+            apiKey: "YOUR_API_KEY",
+            authDomain: "YOUR_PROJECT.firebaseapp.com",
+            projectId: "YOUR_PROJECT_ID",
+            storageBucket: "YOUR_PROJECT.appspot.com",
+            messagingSenderId: "YOUR_SENDER_ID",
+            appId: "YOUR_APP_ID",
+            measurementId: "YOUR_MEASUREMENT_ID"
+        };
+
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        const analytics = getAnalytics(app);
+
+        // Track Page View
+        logEvent(analytics, 'page_view');
+
+        // Track Download Button Clicks
+        document.querySelectorAll('a[href="#download"], .download-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                logEvent(analytics, 'download_button_clicked', {
+                    platform: 'android_apk'
+                });
+            });
+        });
+
+        // Track Web App Launch
+        const webBtn = document.querySelector('a[href*="github.io/studymate/web"]');
+        if (webBtn) {
+            webBtn.addEventListener('click', () => {
+                logEvent(analytics, 'web_app_launched');
+            });
+        }
+    </script>
 </body>
 </html>
