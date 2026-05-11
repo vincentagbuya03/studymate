@@ -24,6 +24,12 @@ dependencies:
   lottie: ^3.3.3
   sqflite_common_ffi: ^2.4.0+3
   sqflite_common_ffi_web: ^1.1.1
+  url_launcher: ^6.3.2
+  go_router: ^17.2.3
+  alarm: ^5.2.1
+  file_picker: ^11.0.2
+  path_provider: ^2.1.5
+  rxdart: ^0.28.0
 
 dev_dependencies:
   flutter_test:
@@ -38,6 +44,8 @@ flutter:
     - assets/iskolar_icon_only.svg
     - assets/lottie/
     - assets/images/
+    - assets/audio/alarm.mp3
+    - assets/audio/alarm_clock_old.mp3
 
 flutter_launcher_icons:
   android: true

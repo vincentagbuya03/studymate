@@ -3,6 +3,8 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../models/grade.dart';
 import '../models/subject.dart';
+import '../widgets/editor_sheets.dart';
+import '../widgets/mascot_status_card.dart';
 
 class GradesScreen extends StatefulWidget {
   const GradesScreen({
@@ -72,6 +74,46 @@ class _GradesScreenState extends State<GradesScreen> {
     );
   }
 
+  Widget _buildGradesMascotCard() {
+    String mascotImage;
+    String statusTitle;
+    String statusMessage;
+
+    final double avg = _weightedAverage;
+
+    if (widget.grades.isEmpty) {
+      mascotImage = 'assets/images/mascot_icandoit.png';
+      statusTitle = 'No Records Yet';
+      statusMessage = 'Log your first grade to track progress!';
+    } else if (avg >= 90) {
+      mascotImage = 'assets/images/celebrating.png';
+      statusTitle = 'Outstanding!';
+      statusMessage = 'You\'re averaging ${avg.toStringAsFixed(1)}%! Keep it up!';
+    } else if (avg >= 80) {
+      mascotImage = 'assets/images/mascot_happy.png';
+      statusTitle = 'Great Work!';
+      statusMessage = 'Solid ${avg.toStringAsFixed(1)}% average. You\'re doing well!';
+    } else if (avg >= 75) {
+      mascotImage = 'assets/images/mascot_passed.png';
+      statusTitle = 'On Track!';
+      statusMessage = '${avg.toStringAsFixed(1)}% average. A little push goes far!';
+    } else if (avg > 0) {
+      mascotImage = 'assets/images/mascot_sad.png';
+      statusTitle = 'Keep Going!';
+      statusMessage = '${avg.toStringAsFixed(1)}% needs attention. You can improve!';
+    } else {
+      mascotImage = 'assets/images/thinking.png';
+      statusTitle = 'Just Started';
+      statusMessage = 'Start adding grades to see your progress.';
+    }
+
+    return MascotStatusCard(
+      mascotImage: mascotImage,
+      statusTitle: statusTitle,
+      statusMessage: statusMessage,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -84,6 +126,8 @@ class _GradesScreenState extends State<GradesScreen> {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(20, 8, 20, 120),
         children: [
+          _buildGradesMascotCard(),
+          const SizedBox(height: 24),
           _GpaCard(percentage: _weightedAverage, gwa: _gwaLabel),
           const SizedBox(height: 32),
           Text('Recent Grades', style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w800)),
@@ -230,91 +274,7 @@ class _GradeItem extends StatelessWidget {
   }
 }
 
-class GradeEditorSheet extends StatefulWidget {
-  const GradeEditorSheet({super.key, required this.subjects, required this.onSave});
-  final List<Subject> subjects;
-  final ValueChanged<Grade> onSave;
 
-  @override
-  State<GradeEditorSheet> createState() => _GradeEditorSheetState();
-}
-
-class _GradeEditorSheetState extends State<GradeEditorSheet> {
-  late String _selectedSubject;
-  final _scoreController = TextEditingController();
-  final _maxController = TextEditingController();
-  String _category = 'Exam';
-
-  @override
-  void initState() {
-    super.initState();
-    _selectedSubject = widget.subjects.isNotEmpty ? widget.subjects.first.name : 'General';
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final mediaQuery = MediaQuery.of(context);
-    return Padding(
-      padding: EdgeInsets.only(bottom: mediaQuery.viewInsets.bottom),
-      child: Container(
-        decoration: BoxDecoration(
-          color: Theme.of(context).scaffoldBackgroundColor,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
-        ),
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text('Record Achievement', style: GoogleFonts.inter(fontSize: 20, fontWeight: FontWeight.w800)),
-            const SizedBox(height: 24),
-            if (widget.subjects.isNotEmpty)
-              DropdownButtonFormField<String>(
-                initialValue: _selectedSubject,
-                items: widget.subjects.map((s) => DropdownMenuItem(value: s.name, child: Text(s.name))).toList(),
-                onChanged: (v) => setState(() => _selectedSubject = v!),
-                decoration: const InputDecoration(labelText: 'Subject'),
-              )
-            else
-              TextFormField(
-                initialValue: _selectedSubject,
-                onChanged: (v) => _selectedSubject = v,
-                decoration: const InputDecoration(labelText: 'Subject'),
-              ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(child: TextFormField(controller: _scoreController, decoration: const InputDecoration(labelText: 'Score'), keyboardType: TextInputType.number)),
-                const SizedBox(width: 16),
-                Expanded(child: TextFormField(controller: _maxController, decoration: const InputDecoration(labelText: 'Max Score'), keyboardType: TextInputType.number)),
-              ],
-            ),
-            const SizedBox(height: 16),
-            DropdownButtonFormField<String>(
-              initialValue: _category,
-              items: ['Exam', 'Quiz', 'Assignment', 'Project', 'Participation'].map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
-              onChanged: (v) => setState(() => _category = v!),
-              decoration: const InputDecoration(labelText: 'Category'),
-            ),
-            const SizedBox(height: 24),
-            SizedBox(width: double.infinity, child: FilledButton(
-              onPressed: () {
-                if (_scoreController.text.isEmpty || _maxController.text.isEmpty) return;
-                widget.onSave(Grade(
-                  subject: _selectedSubject,
-                  score: double.parse(_scoreController.text),
-                  maxScore: double.parse(_maxController.text),
-                  category: _category,
-                  date: DateTime.now(),
-                ));
-              },
-              child: const Text('Add to Records'),
-            )),
-          ],
-        ),
-      ),
-    );
-  }
-}
 
 class _EmptyGradesState extends StatelessWidget {
   const _EmptyGradesState();

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../widgets/mascot_status_card.dart';
 
 class FocusTimerScreen extends StatefulWidget {
   const FocusTimerScreen({super.key});
@@ -9,11 +10,12 @@ class FocusTimerScreen extends StatefulWidget {
   State<FocusTimerScreen> createState() => _FocusTimerScreenState();
 }
 
-class _FocusTimerScreenState extends State<FocusTimerScreen> with SingleTickerProviderStateMixin {
-  static const int _workTime = 25 * 60;
-  static const int _breakTime = 5 * 60;
+enum FocusMode { timer, stopwatch }
 
-  int _remainingSeconds = _workTime;
+class _FocusTimerScreenState extends State<FocusTimerScreen> with SingleTickerProviderStateMixin {
+  FocusMode _currentMode = FocusMode.timer;
+  int _timerDurationMinutes = 25;
+  int _seconds = 25 * 60;
   bool _isRunning = false;
   bool _isWorkMode = true;
   Timer? _timer;
@@ -25,7 +27,7 @@ class _FocusTimerScreenState extends State<FocusTimerScreen> with SingleTickerPr
     super.initState();
     _animationController = AnimationController(
       vsync: this,
-      duration: const Duration(seconds: _workTime),
+      duration: Duration(minutes: _timerDurationMinutes),
     );
   }
 
@@ -43,14 +45,22 @@ class _FocusTimerScreenState extends State<FocusTimerScreen> with SingleTickerPr
     } else {
       _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
         setState(() {
-          if (_remainingSeconds > 0) {
-            _remainingSeconds--;
+          if (_currentMode == FocusMode.timer) {
+            if (_seconds > 0) {
+              _seconds--;
+            } else {
+              _switchMode();
+            }
           } else {
-            _switchMode();
+            _seconds++;
           }
         });
       });
-      _animationController.reverse(from: _remainingSeconds / (_isWorkMode ? _workTime : _breakTime));
+      if (_currentMode == FocusMode.timer) {
+        _animationController.reverse(from: _seconds / (_timerDurationMinutes * 60));
+      } else {
+        _animationController.repeat();
+      }
     }
     setState(() {
       _isRunning = !_isRunning;
@@ -60,12 +70,11 @@ class _FocusTimerScreenState extends State<FocusTimerScreen> with SingleTickerPr
   void _switchMode() {
     _timer?.cancel();
     _isWorkMode = !_isWorkMode;
-    _remainingSeconds = _isWorkMode ? _workTime : _breakTime;
+    _seconds = _isWorkMode ? (_timerDurationMinutes * 60) : (5 * 60);
     _isRunning = false;
-    _animationController.duration = Duration(seconds: _remainingSeconds);
+    _animationController.duration = Duration(seconds: _seconds);
     _animationController.value = 1.0;
     
-    // Play a sound or vibrate here in a real app
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(_isWorkMode ? "Time to focus!" : "Take a break!"),
@@ -78,7 +87,7 @@ class _FocusTimerScreenState extends State<FocusTimerScreen> with SingleTickerPr
     _timer?.cancel();
     setState(() {
       _isWorkMode = true;
-      _remainingSeconds = _workTime;
+      _seconds = _currentMode == FocusMode.timer ? (_timerDurationMinutes * 60) : 0;
       _isRunning = false;
       _animationController.stop();
       _animationController.value = 1.0;
@@ -91,149 +100,231 @@ class _FocusTimerScreenState extends State<FocusTimerScreen> with SingleTickerPr
     return '${mins.toString().padLeft(2, '0')}:${secs.toString().padLeft(2, '0')}';
   }
 
+  Widget _buildTimerMascotCard() {
+    String mascotImage;
+    String statusTitle;
+    String statusMessage;
+
+    if (_currentMode == FocusMode.stopwatch) {
+      if (_isRunning) {
+        mascotImage = 'assets/images/mascot_busy.png';
+        statusTitle = 'Flow State';
+        statusMessage = 'Recording your focus time. Keep going!';
+      } else if (_seconds == 0) {
+        mascotImage = 'assets/images/mascot_happy.png';
+        statusTitle = 'Stopwatch';
+        statusMessage = 'Ready to track your study session?';
+      } else {
+        mascotImage = 'assets/images/mascot_icandoit.png';
+        statusTitle = 'Session Paused';
+        statusMessage = 'You\'ve focused for ${_formatTime(_seconds)} so far!';
+      }
+    } else {
+      final double progress = _seconds / (_isWorkMode ? (_timerDurationMinutes * 60) : (5 * 60));
+
+      if (!_isWorkMode) {
+        mascotImage = 'assets/images/sleeping.png';
+        statusTitle = 'Break Time!';
+        statusMessage = 'Relax and recharge. You earned it!';
+      } else if (_isRunning && progress > 0.5) {
+        mascotImage = 'assets/images/mascot_busy.png';
+        statusTitle = 'Stay Focused!';
+        statusMessage = 'You\'re doing great. Keep going!';
+      } else if (_isRunning && progress <= 0.5 && progress > 0.15) {
+        mascotImage = 'assets/images/thinking.png';
+        statusTitle = 'Halfway There!';
+        statusMessage = 'Push through, the finish line is close!';
+      } else if (_isRunning && progress <= 0.15) {
+        mascotImage = 'assets/images/celebrating.png';
+        statusTitle = 'Almost Done!';
+        statusMessage = 'Just a little more! You\'re amazing!';
+      } else if (!_isRunning && _seconds == (_timerDurationMinutes * 60)) {
+        mascotImage = 'assets/images/mascot_happy.png';
+        statusTitle = 'Ready to Focus?';
+        statusMessage = 'Hit play to start your $_timerDurationMinutes-min session!';
+      } else {
+        mascotImage = 'assets/images/mascot_icandoit.png';
+        statusTitle = 'Paused';
+        statusMessage = 'Take a moment. Resume when ready!';
+      }
+    }
+
+    return MascotStatusCard(
+      mascotImage: mascotImage,
+      statusTitle: statusTitle,
+      statusMessage: statusMessage,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final Color activeColor = _isWorkMode ? const Color(0xFFEF4444) : const Color(0xFF10B981);
+    final Color activeColor = _isWorkMode ? colorScheme.primary : const Color(0xFF10B981);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Focus Timer')),
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(
-              _isWorkMode ? 'FOCUS TIME' : 'BREAK TIME',
-              style: GoogleFonts.inter(
-                fontSize: 14,
-                fontWeight: FontWeight.w900,
-                letterSpacing: 4,
-                color: activeColor.withValues(alpha: 0.7),
-              ),
-            ),
-            const SizedBox(height: 40),
-            Stack(
-              alignment: Alignment.center,
-              children: [
-                SizedBox(
-                  width: 280,
-                  height: 280,
-                  child: CircularProgressIndicator(
-                    value: _remainingSeconds / (_isWorkMode ? _workTime : _breakTime),
-                    strokeWidth: 12,
-                    backgroundColor: activeColor.withValues(alpha: 0.1),
-                    color: activeColor,
-                    strokeCap: StrokeCap.round,
-                  ),
+      body: SingleChildScrollView(
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              _buildTimerMascotCard(),
+              const SizedBox(height: 16),
+              // Mode Selector
+              Container(
+                decoration: BoxDecoration(
+                  color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+                  borderRadius: BorderRadius.circular(16),
                 ),
-                Column(
+                padding: const EdgeInsets.all(4),
+                child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(
-                      _formatTime(_remainingSeconds),
-                      style: GoogleFonts.inter(
-                        fontSize: 64,
-                        fontWeight: FontWeight.w900,
-                        color: colorScheme.onSurface,
-                      ),
-                    ),
-                    Text(
-                      'remaining',
-                      style: GoogleFonts.inter(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w500,
-                        color: colorScheme.onSurface.withValues(alpha: 0.5),
-                      ),
-                    ),
+                    _buildModeButton(FocusMode.timer, Icons.timer_outlined, 'Timer'),
+                    _buildModeButton(FocusMode.stopwatch, Icons.av_timer, 'Stopwatch'),
                   ],
                 ),
+              ),
+              const SizedBox(height: 24),
+              Stack(
+                alignment: Alignment.center,
+                children: [
+                  SizedBox(
+                    width: 280,
+                    height: 280,
+                    child: CircularProgressIndicator(
+                      value: _currentMode == FocusMode.timer
+                          ? _seconds / (_isWorkMode ? (_timerDurationMinutes * 60) : (5 * 60))
+                          : null, // Indeterminate for stopwatch
+                      strokeWidth: 12,
+                      backgroundColor: activeColor.withValues(alpha: 0.1),
+                      color: activeColor,
+                      strokeCap: StrokeCap.round,
+                    ),
+                  ),
+                  Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        _formatTime(_seconds),
+                        style: GoogleFonts.inter(
+                          fontSize: 64,
+                          fontWeight: FontWeight.w900,
+                          color: colorScheme.onSurface,
+                        ),
+                      ),
+                      Text(
+                        _currentMode == FocusMode.stopwatch 
+                            ? 'elapsed'
+                            : (_isWorkMode ? 'session' : 'break'),
+                        style: GoogleFonts.inter(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                          color: colorScheme.onSurface.withValues(alpha: 0.5),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              const SizedBox(height: 32),
+              if (_currentMode == FocusMode.timer && !_isRunning && _isWorkMode) ...[
+                Text(
+                  'Duration: $_timerDurationMinutes mins',
+                  style: GoogleFonts.inter(fontWeight: FontWeight.w700),
+                ),
+                Slider(
+                  value: _timerDurationMinutes.toDouble(),
+                  min: 1,
+                  max: 120,
+                  divisions: 119,
+                  label: '$_timerDurationMinutes min',
+                  activeColor: activeColor,
+                  onChanged: (val) {
+                    setState(() {
+                      _timerDurationMinutes = val.toInt();
+                      _seconds = _timerDurationMinutes * 60;
+                    });
+                  },
+                ),
               ],
-            ),
-            const SizedBox(height: 60),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                _TimerButton(
-                  onPressed: _resetTimer,
-                  icon: Icons.refresh_rounded,
-                  color: colorScheme.onSurface.withValues(alpha: 0.1),
-                  iconColor: colorScheme.onSurface,
-                ),
-                const SizedBox(width: 32),
-                _TimerButton(
-                  onPressed: _toggleTimer,
-                  icon: _isRunning ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                  color: activeColor,
-                  iconColor: Colors.white,
-                  size: 80,
-                ),
-                const SizedBox(width: 32),
-                _TimerButton(
-                  onPressed: _switchMode,
-                  icon: Icons.skip_next_rounded,
-                  color: colorScheme.onSurface.withValues(alpha: 0.1),
-                  iconColor: colorScheme.onSurface,
-                ),
-              ],
-            ),
-            const SizedBox(height: 40),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 40),
-              child: Text(
-                _isWorkMode 
-                  ? "Put your phone away and concentrate on your tasks."
-                  : "Stretch, hydrate, and prepare for the next session.",
+              const SizedBox(height: 32),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  IconButton.filledTonal(
+                    onPressed: _resetTimer,
+                    icon: const Icon(Icons.refresh_rounded),
+                    padding: const EdgeInsets.all(20),
+                    iconSize: 28,
+                  ),
+                  const SizedBox(width: 24),
+                  FilledButton(
+                    onPressed: _toggleTimer,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: activeColor,
+                      padding: const EdgeInsets.symmetric(horizontal: 48, vertical: 20),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                    ),
+                    child: Icon(_isRunning ? Icons.pause_rounded : Icons.play_arrow_rounded, size: 36),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 40),
+              Text(
+                'Focus sessions help you study better.\nKeep going, Isko is here!',
                 textAlign: TextAlign.center,
                 style: GoogleFonts.inter(
                   fontSize: 14,
-                  color: colorScheme.onSurface.withValues(alpha: 0.6),
+                  color: colorScheme.onSurface.withValues(alpha: 0.4),
                   height: 1.5,
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
   }
-}
 
-class _TimerButton extends StatelessWidget {
-  const _TimerButton({
-    required this.onPressed,
-    required this.icon,
-    required this.color,
-    required this.iconColor,
-    this.size = 60,
-  });
-
-  final VoidCallback onPressed;
-  final IconData icon;
-  final Color color;
-  final Color iconColor;
-  final double size;
-
-  @override
-  Widget build(BuildContext context) {
+  Widget _buildModeButton(FocusMode mode, IconData icon, String label) {
+    final isSelected = _currentMode == mode;
+    final colorScheme = Theme.of(context).colorScheme;
+    
     return GestureDetector(
-      onTap: onPressed,
+      onTap: () {
+        if (_isRunning) return;
+        setState(() {
+          _currentMode = mode;
+          _resetTimer();
+        });
+      },
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
-        width: size,
-        height: size,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         decoration: BoxDecoration(
-          color: color,
-          shape: BoxShape.circle,
-          boxShadow: [
-            if (size > 60)
-              BoxShadow(
-                color: color.withValues(alpha: 0.3),
-                blurRadius: 20,
-                offset: const Offset(0, 10),
+          color: isSelected ? colorScheme.primary : Colors.transparent,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              icon,
+              size: 18,
+              color: isSelected ? Colors.white : colorScheme.onSurface.withValues(alpha: 0.5),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              label,
+              style: GoogleFonts.inter(
+                fontSize: 13,
+                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                color: isSelected ? Colors.white : colorScheme.onSurface.withValues(alpha: 0.5),
               ),
+            ),
           ],
         ),
-        child: Icon(icon, color: iconColor, size: size * 0.5),
       ),
     );
   }

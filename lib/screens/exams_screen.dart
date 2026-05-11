@@ -4,6 +4,8 @@ import 'package:intl/intl.dart';
 
 import '../models/exam.dart';
 import '../models/subject.dart';
+import '../widgets/mascot_status_card.dart';
+import '../widgets/editor_sheets.dart';
 
 class ExamsScreen extends StatefulWidget {
   const ExamsScreen({
@@ -52,30 +54,72 @@ class _ExamsScreenState extends State<ExamsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Exams & Tests')),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _openExamSheet,
         icon: const Icon(Icons.history_edu_rounded),
         label: const Text('Add Exam'),
       ),
-      body: ListView.builder(
+      body: ListView(
         padding: const EdgeInsets.fromLTRB(20, 8, 20, 120),
-        itemCount: widget.exams.isEmpty ? 1 : widget.exams.length,
-        itemBuilder: (context, index) {
-          if (widget.exams.isEmpty) {
-            return const _EmptyExamsState();
-          }
-          final exam = widget.exams[index];
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 12),
-            child: _ExamCard(
-              exam: exam,
-              onTap: () => _openExamSheet(exam),
-              onDelete: () => widget.onDeleteExam(exam.id!),
-            ),
-          );
-        },
+        children: <Widget>[
+          _buildExamMascotCard(),
+          const SizedBox(height: 24),
+          if (widget.exams.isEmpty)
+            const _EmptyExamsState()
+          else
+            ...widget.exams.map((exam) => Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: _ExamCard(
+                exam: exam,
+                onTap: () => _openExamSheet(exam),
+                onDelete: () => widget.onDeleteExam(exam.id!),
+              ),
+            )),
+        ],
       ),
+    );
+  }
+
+  Widget _buildExamMascotCard() {
+    final DateTime now = DateTime.now();
+    final List<Exam> upcoming = widget.exams.where((e) => e.dateTime.isAfter(now)).toList()
+      ..sort((a, b) => a.dateTime.compareTo(b.dateTime));
+    final List<Exam> past = widget.exams.where((e) => e.dateTime.isBefore(now)).toList();
+
+    String mascotImage;
+    String statusTitle;
+    String statusMessage;
+
+    if (widget.exams.isEmpty) {
+      mascotImage = 'assets/images/mascot_passed.png';
+      statusTitle = 'Clear Skies!';
+      statusMessage = 'No exams on the horizon. Enjoy the calm!';
+    } else if (upcoming.isNotEmpty) {
+      final Exam next = upcoming.first;
+      final Duration diff = next.dateTime.difference(now);
+      if (diff.inHours < 24) {
+        mascotImage = 'assets/images/mascot_busy.png';
+        statusTitle = 'Exam Tomorrow!';
+        statusMessage = '${next.title} is coming up very soon!';
+      } else if (diff.inDays <= 3) {
+        mascotImage = 'assets/images/thinking.png';
+        statusTitle = 'Study Time!';
+        statusMessage = '${next.title} in ${diff.inDays} day(s). Start reviewing!';
+      } else {
+        mascotImage = 'assets/images/mascot_happy.png';
+        statusTitle = 'Well Planned!';
+        statusMessage = '${upcoming.length} exam(s) upcoming. You\'re prepared!';
+      }
+    } else {
+      mascotImage = 'assets/images/celebrating.png';
+      statusTitle = 'All Exams Done!';
+      statusMessage = 'You\'ve completed ${past.length} exam(s). Great job!';
+    }
+
+    return MascotStatusCard(
+      mascotImage: mascotImage,
+      statusTitle: statusTitle,
+      statusMessage: statusMessage,
     );
   }
 }
@@ -165,114 +209,7 @@ class _ExamCard extends StatelessWidget {
   }
 }
 
-class ExamEditorSheet extends StatefulWidget {
-  const ExamEditorSheet({super.key, required this.subjects, required this.onSave, this.exam});
 
-  final List<Subject> subjects;
-  final ValueChanged<Exam> onSave;
-  final Exam? exam;
-
-  @override
-  State<ExamEditorSheet> createState() => _ExamEditorSheetState();
-}
-
-class _ExamEditorSheetState extends State<ExamEditorSheet> {
-  final _formKey = GlobalKey<FormState>();
-  final _titleController = TextEditingController();
-  final _subjectController = TextEditingController();
-  final _roomController = TextEditingController();
-  final _notesController = TextEditingController();
-  late DateTime _dateTime;
-
-  @override
-  void initState() {
-    super.initState();
-    final exam = widget.exam;
-    _titleController.text = exam?.title ?? '';
-    _subjectController.text = exam?.subject ?? '';
-    _roomController.text = exam?.room ?? '';
-    _notesController.text = exam?.notes ?? '';
-    _dateTime = exam?.dateTime ?? DateTime.now().add(const Duration(days: 7));
-  }
-
-  Future<void> _pickDateTime() async {
-    final pickedDate = await showDatePicker(
-      context: context,
-      firstDate: DateTime.now(),
-      lastDate: DateTime(2035),
-      initialDate: _dateTime,
-    );
-    if (pickedDate == null || !mounted) return;
-
-    final pickedTime = await showTimePicker(
-      context: context,
-      initialTime: TimeOfDay.fromDateTime(_dateTime),
-    );
-    if (pickedTime == null || !mounted) return;
-
-    setState(() {
-      _dateTime = DateTime(
-        pickedDate.year,
-        pickedDate.month,
-        pickedDate.day,
-        pickedTime.hour,
-        pickedTime.minute,
-      );
-    });
-  }
-
-  void _submit() {
-    if (!_formKey.currentState!.validate()) return;
-    widget.onSave(Exam(
-      id: widget.exam?.id,
-      title: _titleController.text.trim(),
-      subject: _subjectController.text.trim(),
-      room: _roomController.text.trim(),
-      notes: _notesController.text.trim(),
-      dateTime: _dateTime,
-    ));
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Theme.of(context).scaffoldBackgroundColor,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
-      ),
-      padding: const EdgeInsets.fromLTRB(24, 24, 24, 32),
-      child: SingleChildScrollView(
-        child: Form(
-          key: _formKey,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(widget.exam == null ? 'Schedule Exam' : 'Edit Exam', style: GoogleFonts.inter(fontSize: 20, fontWeight: FontWeight.w800)),
-              const SizedBox(height: 24),
-              TextFormField(controller: _titleController, decoration: const InputDecoration(labelText: 'Exam Title')),
-              const SizedBox(height: 12),
-              TextFormField(controller: _subjectController, decoration: const InputDecoration(labelText: 'Subject')),
-              const SizedBox(height: 12),
-              TextFormField(controller: _roomController, decoration: const InputDecoration(labelText: 'Room/Location')),
-              const SizedBox(height: 16),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                title: Text('Date & Time', style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
-                subtitle: Text(DateFormat('MMM d, yyyy • hh:mm a').format(_dateTime)),
-                trailing: IconButton(icon: const Icon(Icons.calendar_month_rounded), onPressed: _pickDateTime),
-              ),
-              const SizedBox(height: 24),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton(onPressed: _submit, child: const Text('Save Exam')),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
 
 class _EmptyExamsState extends StatelessWidget {
   const _EmptyExamsState();
@@ -282,11 +219,24 @@ class _EmptyExamsState extends StatelessWidget {
       child: Column(
         children: [
           const SizedBox(height: 60),
-          Icon(Icons.auto_stories_rounded, size: 80, color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.2)),
-          const SizedBox(height: 20),
-          Text('No Exams Yet', style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w700)),
+          Image.asset('assets/images/mascot_passed.png', height: 160),
+          const SizedBox(height: 24),
+          Text(
+            'Clear Skies Ahead',
+            style: GoogleFonts.inter(fontSize: 20, fontWeight: FontWeight.w800),
+          ),
           const SizedBox(height: 8),
-          Text('Stay ahead of your schedule by tracking your tests and finals.', textAlign: TextAlign.center, style: GoogleFonts.inter(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6))),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 32),
+            child: Text(
+              'No upcoming exams found. Track your tests and finals here to stay ahead of the game!',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.inter(
+                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
+                height: 1.5,
+              ),
+            ),
+          ),
         ],
       ),
     );

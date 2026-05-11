@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -8,6 +9,7 @@ import 'package:timezone/timezone.dart' as tz;
 import '../models/assignment.dart';
 import '../models/exam.dart';
 import '../models/subject.dart';
+import 'alarm_service.dart';
 
 class NotificationService {
   NotificationService._();
@@ -56,34 +58,55 @@ class NotificationService {
 
     await androidPlugin?.createNotificationChannel(
       const AndroidNotificationChannel(
-        'iskolar_reminders_v4',
-        'Iskolar Reminders',
-        description: 'Assignment and daily schedule reminders.',
+        'iskolar_reminders_v5', // Incremented version to ensure channel update
+        'StudyMate Alarms',
+        description: 'Assignment and exam reminders with custom sound.',
         importance: Importance.max,
         playSound: true,
+        sound: RawResourceAndroidNotificationSound('alarm'),
         enableVibration: true,
       ),
     );
   }
 
-  /// Requests Android notification permission only after the app UI is visible.
-  Future<bool?> requestNotificationsPermission() async {
+  /// Requests Android notification permission only (POST_NOTIFICATIONS).
+  /// Does NOT request exact alarm permission — use [requestExactAlarmPermission] for that.
+  Future<bool> requestNotificationsPermission() async {
+    if (kIsWeb) return true;
     final AndroidFlutterLocalNotificationsPlugin? androidPlugin = _plugin
         .resolvePlatformSpecificImplementation<
           AndroidFlutterLocalNotificationsPlugin
         >();
 
+    final bool? granted = await androidPlugin?.requestNotificationsPermission();
+
+    // Android versions below 13 do not require the POST_NOTIFICATIONS runtime
+    // permission, so the plugin may return null even though notifications work.
+    return granted ?? true;
+  }
+
+  /// Checks whether the app can schedule exact alarms (Android 12+).
+  /// Returns true on web, or if the platform check succeeds.
+  Future<bool> checkExactAlarmPermission() async {
+    if (kIsWeb) return true;
+    return true;
+  }
+
+  /// Opens the system settings page for exact alarms (SCHEDULE_EXACT_ALARM).
+  /// On Android 12+, the user must manually toggle this ON for release builds.
+  Future<void> requestExactAlarmPermission() async {
+    if (kIsWeb) return;
+    final AndroidFlutterLocalNotificationsPlugin? androidPlugin = _plugin
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >();
     await androidPlugin?.requestExactAlarmsPermission();
-    return androidPlugin?.requestNotificationsPermission();
   }
 
   /// Opens the system settings for exact alarms (Android 14+).
   Future<void> openExactAlarmSettings() async {
-    final AndroidFlutterLocalNotificationsPlugin? androidPlugin = _plugin
-        .resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin
-        >();
-    await androidPlugin?.requestExactAlarmsPermission();
+    if (kIsWeb) return;
+    await requestExactAlarmPermission();
   }
 
   Future<void> rescheduleAll({
@@ -94,9 +117,11 @@ class NotificationService {
     required bool enableOneDayReminder,
     required bool enableOneHourReminder,
     required bool enableExactTimeReminder,
+    required TimeOfDay classAlarmTime,
+    required String alarmSoundPath,
     required String studentName,
   }) async {
-    if (!_isInitialized) return;
+    if (!_isInitialized || kIsWeb) return;
     try {
       await cancelAllNotifications();
 
@@ -104,6 +129,8 @@ class NotificationService {
         await scheduleDailyReminder(
           subjects: subjects,
           studentName: studentName,
+          alarmTime: classAlarmTime,
+          alarmSoundPath: alarmSoundPath,
         );
       }
 
@@ -113,6 +140,7 @@ class NotificationService {
           enableOneDayReminder: enableOneDayReminder,
           enableOneHourReminder: enableOneHourReminder,
           enableExactTimeReminder: enableExactTimeReminder,
+          alarmSoundPath: alarmSoundPath,
         );
       }
 
@@ -122,6 +150,7 @@ class NotificationService {
           enableOneDayReminder: enableOneDayReminder,
           enableOneHourReminder: enableOneHourReminder,
           enableExactTimeReminder: enableExactTimeReminder,
+          alarmSoundPath: alarmSoundPath,
         );
       }
     } catch (e) {
@@ -129,14 +158,14 @@ class NotificationService {
     }
   }
 
-  /// Schedules one-day and one-hour reminders for a single assignment.
   Future<void> scheduleAssignmentReminders({
     required Assignment assignment,
     required bool enableOneDayReminder,
     required bool enableOneHourReminder,
     required bool enableExactTimeReminder,
+    required String alarmSoundPath,
   }) async {
-    if (!_isInitialized || assignment.id == null) {
+    if (!_isInitialized || assignment.id == null || kIsWeb) {
       return;
     }
 
@@ -153,6 +182,7 @@ class NotificationService {
         title: 'Assignment due tomorrow',
         body:
             '${assignment.title} for ${assignment.subject} is due tomorrow at ${assignment.dueLabel}.',
+        scheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
       );
     }
 
@@ -163,6 +193,7 @@ class NotificationService {
         title: 'Assignment due in 1 hour',
         body:
             '${assignment.title} for ${assignment.subject} is almost due. Final push, StudyMate!',
+        scheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
       );
     }
 
@@ -179,12 +210,14 @@ class NotificationService {
         title: 'Assignment Due Now!',
         body:
             'Time is up! ${assignment.title} for ${assignment.subject} is due now.',
+        scheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
       );
     }
   }
 
   /// Cancels reminders tied to a single assignment record.
   Future<void> cancelAssignmentNotifications(int assignmentId) async {
+    if (kIsWeb) return;
     await _plugin.cancel((assignmentId * 100) + 1);
     await _plugin.cancel((assignmentId * 100) + 2);
     await _plugin.cancel((assignmentId * 100) + 3);
@@ -196,8 +229,9 @@ class NotificationService {
     required bool enableOneDayReminder,
     required bool enableOneHourReminder,
     required bool enableExactTimeReminder,
+    required String alarmSoundPath,
   }) async {
-    if (exam.id == null) {
+    if (exam.id == null || kIsWeb) {
       return;
     }
 
@@ -210,6 +244,7 @@ class NotificationService {
         title: 'Upcoming Exam Tomorrow',
         body:
             '${exam.title} for ${exam.subject} is tomorrow at ${DateFormat('hh:mm a').format(exam.dateTime)}.',
+        scheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
       );
     }
 
@@ -220,6 +255,7 @@ class NotificationService {
         title: 'Exam starting in 1 hour',
         body:
             '${exam.title} is starting soon in ${exam.room}. Good luck, StudyMate!',
+        scheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
       );
     }
 
@@ -230,75 +266,89 @@ class NotificationService {
         title: 'Exam Starting Now!',
         body:
             'Time to shine! ${exam.title} for ${exam.subject} is starting now in ${exam.room}.',
+        scheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
       );
     }
   }
 
   Future<void> cancelExamNotifications(int examId) async {
+    if (kIsWeb) return;
     await _plugin.cancel((examId * 100) + 10);
     await _plugin.cancel((examId * 100) + 20);
     await _plugin.cancel((examId * 100) + 30);
   }
 
-  /// Creates a repeating 7:00 AM reminder for the day's class schedule.
+  /// Creates an alarm for the next available class day.
   Future<void> scheduleDailyReminder({
     required List<Subject> subjects,
     required String studentName,
+    required TimeOfDay alarmTime,
+    required String alarmSoundPath,
   }) async {
-    final List<Subject> todaySubjects = subjects
-        .where((Subject subject) => subject.occursOn(DateTime.now()))
-        .toList();
+    if (kIsWeb) return;
 
-    String firstStartTime = '';
-    if (todaySubjects.isNotEmpty) {
-      ScheduleSlot? earliestSlot;
-      for (final Subject subject in todaySubjects) {
-        for (final ScheduleSlot slot in subject.getSlotsForDay(
-          DateTime.now().weekday,
-        )) {
-          if (earliestSlot == null ||
-              slot.startTime.compareTo(earliestSlot.startTime) < 0) {
-            earliestSlot = slot;
-          }
-        }
+    // Clear old reminders
+    await AlarmService.instance.stopAlarm(_dailyReminderId);
+    await _plugin.cancel(_dailyReminderId);
+
+    final DateTime now = DateTime.now();
+    DateTime? nextClassDate;
+
+    for (int i = 0; i < 14; i++) {
+      final DateTime candidateDate = now.add(Duration(days: i));
+      final DateTime candidateAlarmTime = DateTime(
+        candidateDate.year,
+        candidateDate.month,
+        candidateDate.day,
+        alarmTime.hour,
+        alarmTime.minute,
+      );
+
+      if (candidateAlarmTime.isBefore(now)) {
+        continue;
       }
-      firstStartTime = earliestSlot?.startTime ?? '';
+
+      final bool hasClass = subjects.any((subject) => subject.occursOn(candidateDate));
+      if (hasClass) {
+        nextClassDate = candidateAlarmTime;
+        break;
+      }
     }
 
-    final String body = todaySubjects.isEmpty
-        ? 'Walang class sa schedule mo today. Perfect day to catch up and recharge.'
-        : 'May ${todaySubjects.length} class ka today, $studentName. Unang klase: $firstStartTime.';
+    if (nextClassDate != null) {
+      final List<Subject> classDaySubjects = subjects
+          .where((Subject subject) => subject.occursOn(nextClassDate!))
+          .toList();
 
-    try {
-      await _plugin.zonedSchedule(
-        _dailyReminderId,
-        'Good morning, $studentName',
-        body,
-        _nextMorningSeven(),
-        _notificationDetails(),
-        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-        matchDateTimeComponents: DateTimeComponents.time,
-        uiLocalNotificationDateInterpretation:
-            UILocalNotificationDateInterpretation.absoluteTime,
-      );
-    } catch (e) {
-      await _plugin.zonedSchedule(
-        _dailyReminderId,
-        'Good morning, $studentName',
-        body,
-        _nextMorningSeven(),
-        _notificationDetails(),
-        androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
-        matchDateTimeComponents: DateTimeComponents.time,
-        uiLocalNotificationDateInterpretation:
-            UILocalNotificationDateInterpretation.absoluteTime,
+      String firstStartTime = '';
+      if (classDaySubjects.isNotEmpty) {
+        ScheduleSlot? earliestSlot;
+        for (final Subject subject in classDaySubjects) {
+          for (final ScheduleSlot slot in subject.getSlotsForDay(nextClassDate.weekday)) {
+            if (earliestSlot == null ||
+                slot.startTime.compareTo(earliestSlot.startTime) < 0) {
+              earliestSlot = slot;
+            }
+          }
+        }
+        firstStartTime = earliestSlot?.startTime ?? '';
+      }
+
+      final String body = 'You have ${classDaySubjects.length} class(es) today, $studentName. First class: $firstStartTime.';
+
+      await AlarmService.instance.scheduleAlarm(
+        id: _dailyReminderId,
+        dateTime: nextClassDate,
+        title: 'Class Day Alarm',
+        body: body,
+        assetAudioPath: alarmSoundPath,
       );
     }
   }
 
   /// Clears every notification created by the app.
   Future<void> cancelAllNotifications() async {
-    if (!_isInitialized) return;
+    if (!_isInitialized || kIsWeb) return;
     try {
       await _plugin.cancelAll();
     } catch (e) {
@@ -311,6 +361,7 @@ class NotificationService {
     required String title,
     required String body,
   }) async {
+    if (kIsWeb) return;
     await _plugin.show(9999, title, body, _notificationDetails());
   }
 
@@ -320,7 +371,7 @@ class NotificationService {
     required List<Exam> exams,
     required bool enableExactTimeReminder,
   }) async {
-    if (!_isInitialized || !enableExactTimeReminder) {
+    if (!_isInitialized || !enableExactTimeReminder || kIsWeb) {
       return;
     }
 
@@ -400,6 +451,7 @@ class NotificationService {
     required DateTime when,
     required String title,
     required String body,
+    required AndroidScheduleMode scheduleMode,
   }) async {
     final DateTime now = DateTime.now();
     final Duration diff = now.difference(when);
@@ -418,7 +470,8 @@ class NotificationService {
       final tz.TZDateTime localNow = tz.TZDateTime.now(tz.local);
 
       // Safety: ensure scheduled time is strictly in the future
-      if (scheduledDate.isBefore(localNow) || scheduledDate.isAtSameMomentAs(localNow)) {
+      if (scheduledDate.isBefore(localNow) ||
+          scheduledDate.isAtSameMomentAs(localNow)) {
         scheduledDate = localNow.add(const Duration(seconds: 5));
       }
 
@@ -432,13 +485,13 @@ class NotificationService {
         body,
         scheduledDate,
         _notificationDetails(),
-        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+        androidScheduleMode: scheduleMode,
         uiLocalNotificationDateInterpretation:
             UILocalNotificationDateInterpretation.absoluteTime,
       );
       debugPrint('Successfully scheduled notification $id');
     } catch (e) {
-      debugPrint('Exact schedule failed, trying inexact: $e');
+      debugPrint('Primary schedule failed, trying inexact: $e');
       try {
         tz.TZDateTime fallbackDate = tz.TZDateTime.from(when, tz.local);
         final tz.TZDateTime fallbackNow = tz.TZDateTime.now(tz.local);
@@ -456,7 +509,9 @@ class NotificationService {
               UILocalNotificationDateInterpretation.absoluteTime,
         );
       } catch (e2) {
-        debugPrint('Inexact schedule also failed: $e2. Firing instantly instead.');
+        debugPrint(
+          'Inexact schedule also failed: $e2. Firing instantly instead.',
+        );
         await _plugin.show(id, title, body, _notificationDetails());
       }
     }
@@ -465,37 +520,28 @@ class NotificationService {
   NotificationDetails _notificationDetails() {
     return const NotificationDetails(
       android: AndroidNotificationDetails(
-        'iskolar_reminders_v4',
-        'Iskolar Reminders',
-        channelDescription: 'Assignment and daily schedule reminders.',
+        'iskolar_reminders_v5',
+        'StudyMate Alarms',
+        channelDescription: 'Assignment and exam reminders with custom sound.',
         importance: Importance.max,
         priority: Priority.max,
         playSound: true,
+        sound: RawResourceAndroidNotificationSound('alarm'),
         enableVibration: true,
         fullScreenIntent: true,
         ticker: 'StudyMate Reminder',
         visibility: NotificationVisibility.public,
         category: AndroidNotificationCategory.reminder,
       ),
+      iOS: DarwinNotificationDetails(
+        presentAlert: true,
+        presentBadge: true,
+        presentSound: true,
+        sound: 'alarm.mp3',
+      ),
     );
   }
 
-  tz.TZDateTime _nextMorningSeven() {
-    final tz.TZDateTime now = tz.TZDateTime.now(tz.local);
-    tz.TZDateTime scheduled = tz.TZDateTime(
-      tz.local,
-      now.year,
-      now.month,
-      now.day,
-      7,
-    );
-
-    if (scheduled.isBefore(now)) {
-      scheduled = scheduled.add(const Duration(days: 1));
-    }
-
-    return scheduled;
-  }
 
   bool _isWithinForegroundWindow({
     required DateTime targetTime,

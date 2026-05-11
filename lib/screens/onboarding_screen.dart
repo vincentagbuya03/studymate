@@ -95,7 +95,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                 children: [
                   Center(
                     child: Image.asset(
-                      'assets/images/isko.png',
+                      'assets/images/mascot_happy.png',
                       height: 120,
                       fit: BoxFit.contain,
                     ),

@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:io' show Platform;
 
 import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:sqflite/sqflite.dart';
+
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:sqflite_common_ffi_web/sqflite_ffi_web.dart';
 
@@ -10,6 +10,7 @@ import 'package:sqflite_common_ffi_web/sqflite_ffi_web.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
+
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'models/assignment.dart';
@@ -26,7 +27,11 @@ import 'screens/schedule_screen.dart';
 import 'screens/settings_screen.dart';
 import 'services/database_service.dart';
 import 'services/notification_service.dart';
+import 'services/alarm_service.dart';
+import 'screens/alarm_ring_screen.dart';
 import 'widgets/app_logo.dart';
+import 'widgets/editor_sheets.dart';
+import 'web/app_download_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -40,6 +45,7 @@ Future<void> main() async {
 
   await DatabaseService.instance.initialize();
   await NotificationService.instance.initialize();
+  await AlarmService.instance.initialize();
   runApp(const StudyMateApp());
 }
 
@@ -58,6 +64,7 @@ class _StudyMateAppState extends State<StudyMateApp>
 
   final GlobalKey<ScaffoldMessengerState> _messengerKey =
       GlobalKey<ScaffoldMessengerState>();
+  final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
   final DatabaseService _databaseService = DatabaseService.instance;
   final NotificationService _notificationService = NotificationService.instance;
 
@@ -71,6 +78,8 @@ class _StudyMateAppState extends State<StudyMateApp>
   bool _dayBeforeReminderEnabled = true;
   bool _hourBeforeReminderEnabled = true;
   bool _exactTimeReminderEnabled = true;
+  TimeOfDay _classAlarmTime = const TimeOfDay(hour: 7, minute: 0);
+  String _alarmSoundPath = 'assets/audio/alarm_clock_old.mp3';
   String _studentName = 'User';
   int _selectedIndex = 0;
   bool _isFirstOpen = false;
@@ -81,12 +90,57 @@ class _StudyMateAppState extends State<StudyMateApp>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _bootstrap();
+    _listenToAlarms();
+  }
+
+  StreamSubscription? _ringingSubscription;
+
+  void _listenToAlarms() {
+    _ringingSubscription = AlarmService.instance.ringingStream.listen((alarmSet) {
+      if (!mounted) return;
+      for (final settings in alarmSet.alarms) {
+        _showAlarmRingScreen(settings.id, settings.notificationSettings.title, settings.notificationSettings.body);
+      }
+    });
+  }
+
+  /// Check on startup if an alarm is already ringing (e.g. app was opened
+  /// from the notification while the alarm was still going).
+  void _checkForRingingAlarms() {
+    final ringing = AlarmService.instance.currentlyRinging;
+    if (ringing.isNotEmpty) {
+      final settings = ringing.first;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _showAlarmRingScreen(settings.id, settings.notificationSettings.title, settings.notificationSettings.body);
+      });
+    }
+  }
+
+  bool _isAlarmScreenShowing = false;
+
+  void _showAlarmRingScreen(int alarmId, String title, String body) {
+    if (!mounted || _isAlarmScreenShowing) return;
+    _isAlarmScreenShowing = true;
+
+    _navigatorKey.currentState?.push(
+      MaterialPageRoute(
+        builder: (context) => AlarmRingScreen(
+          alarmId: alarmId,
+          title: title,
+          body: body,
+        ),
+      ),
+    ).then((_) {
+      _isAlarmScreenShowing = false;
+      _refreshNotifications();
+    });
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _foregroundReminderTimer?.cancel();
+    _ringingSubscription?.cancel();
     super.dispose();
   }
 
@@ -95,6 +149,8 @@ class _StudyMateAppState extends State<StudyMateApp>
     if (state == AppLifecycleState.resumed) {
       _startForegroundReminderWatcher();
       _runForegroundReminderCheck();
+      _checkForRingingAlarms();
+      _refreshNotifications();
       return;
     }
 
@@ -117,6 +173,8 @@ class _StudyMateAppState extends State<StudyMateApp>
       enableOneDayReminder: _dayBeforeReminderEnabled,
       enableOneHourReminder: _hourBeforeReminderEnabled,
       enableExactTimeReminder: _exactTimeReminderEnabled,
+      classAlarmTime: _classAlarmTime,
+      alarmSoundPath: _alarmSoundPath,
       studentName: _studentName,
     );
     if (mounted) {
@@ -126,6 +184,7 @@ class _StudyMateAppState extends State<StudyMateApp>
       _startForegroundReminderWatcher();
       _runForegroundReminderCheck();
       _queueNotificationPermissionPrompt();
+      _checkForRingingAlarms();
     }
   }
 
@@ -137,6 +196,12 @@ class _StudyMateAppState extends State<StudyMateApp>
     _dayBeforeReminderEnabled = prefs.getBool('day_before_reminder') ?? true;
     _hourBeforeReminderEnabled = prefs.getBool('hour_before_reminder') ?? true;
     _exactTimeReminderEnabled = prefs.getBool('exact_time_reminder') ?? true;
+    _alarmSoundPath = prefs.getString('alarm_sound_path') ?? 'assets/audio/alarm_clock_old.mp3';
+    final int? alarmHour = prefs.getInt('class_alarm_hour');
+    final int? alarmMinute = prefs.getInt('class_alarm_minute');
+    if (alarmHour != null && alarmMinute != null) {
+      _classAlarmTime = TimeOfDay(hour: alarmHour, minute: alarmMinute);
+    }
     _isFirstOpen = prefs.getBool('is_first_open') ?? true;
   }
 
@@ -308,6 +373,7 @@ class _StudyMateAppState extends State<StudyMateApp>
 
   /// Waits until a visible screen is rendered before showing Android's permission dialog.
   void _queueNotificationPermissionPrompt() {
+    if (kIsWeb) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || _isLoading) {
         return;
@@ -317,27 +383,40 @@ class _StudyMateAppState extends State<StudyMateApp>
   }
 
   /// Prompts once per app data lifecycle to avoid repeated system dialogs on startup.
+  /// Handles BOTH notification permission AND exact alarm permission.
   Future<void> _requestNotificationPermissionIfNeeded() async {
     final SharedPreferences prefs = await SharedPreferences.getInstance();
     final bool hasPrompted =
         prefs.getBool(_notificationPermissionPromptedKey) ?? false;
 
     if (hasPrompted || !mounted || _isLoading) {
+      // Even if we already prompted, always check exact alarm on every launch
+      // because the user might have revoked it from system settings.
+      await _ensureExactAlarmPermission();
       return;
     }
 
-    final bool? granted = await _notificationService
+    // Step 1: Request POST_NOTIFICATIONS permission (system dialog)
+    final bool notifGranted = await _notificationService
         .requestNotificationsPermission();
-    if (granted == true) {
+
+    if (notifGranted) {
       await prefs.setBool(_notificationPermissionPromptedKey, true);
-      await _refreshNotifications();
     } else {
       await prefs.setBool(_notificationPermissionPromptedKey, false);
     }
+
+    // Step 2: Request SCHEDULE_EXACT_ALARM permission
+    // This is separate because on Android 12+ release builds, exact alarm
+    // permission is NOT auto-granted (unlike debug builds).
+    await _ensureExactAlarmPermission();
+
+    await _refreshNotifications();
+
     _messengerKey.currentState?.showSnackBar(
       SnackBar(
         content: Text(
-          granted == true
+          notifGranted
               ? 'Notifications Enabled!'
               : 'Notifications are restricted. Please check your phone settings.',
         ),
@@ -346,12 +425,20 @@ class _StudyMateAppState extends State<StudyMateApp>
     );
   }
 
+  /// Ensures exact alarm permission is granted. On Android 12+ release builds
+  /// this permission is NOT automatically granted unlike debug builds.
+  /// Opens the system settings page if not granted.
+  Future<void> _ensureExactAlarmPermission() async {
+    if (kIsWeb) return;
+    await _notificationService.requestExactAlarmPermission();
+  }
+
   /// Sends a one-tap test notification after confirming runtime access.
   Future<void> _sendTestNotification() async {
-    final bool? granted = await _notificationService
+    final bool granted = await _notificationService
         .requestNotificationsPermission();
 
-    if (granted != true) {
+    if (!granted) {
       _messengerKey.currentState?.showSnackBar(
         const SnackBar(
           content: Text(
@@ -376,13 +463,37 @@ class _StudyMateAppState extends State<StudyMateApp>
     );
   }
 
+  Future<void> _sendTestAlarm() async {
+    final DateTime when = DateTime.now().add(const Duration(minutes: 1));
+
+    await AlarmService.instance.scheduleAlarm(
+      id: 9998,
+      dateTime: when,
+      title: 'StudyMate Test Alarm',
+      body: 'If this rings, the wake-up alarm pipeline is working.',
+      assetAudioPath: _alarmSoundPath,
+    );
+
+    _messengerKey.currentState?.showSnackBar(
+      SnackBar(
+        content: Text(
+          'Test alarm scheduled for ${DateFormat('hh:mm a').format(when)}.',
+        ),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
   /// Re-requests notification access, opens exact alarm settings, and rebuilds reminders.
   Future<void> _repairNotifications() async {
-    final bool? granted = await _notificationService
+    // Step 1: Request POST_NOTIFICATIONS
+    final bool notifGranted = await _notificationService
         .requestNotificationsPermission();
-    await _notificationService.openExactAlarmSettings();
 
-    if (granted == true) {
+    // Step 2: Request SCHEDULE_EXACT_ALARM (opens system settings)
+    await _notificationService.requestExactAlarmPermission();
+
+    if (notifGranted) {
       final SharedPreferences prefs = await SharedPreferences.getInstance();
       await prefs.setBool(_notificationPermissionPromptedKey, true);
       await _refreshNotifications();
@@ -391,9 +502,9 @@ class _StudyMateAppState extends State<StudyMateApp>
     _messengerKey.currentState?.showSnackBar(
       SnackBar(
         content: Text(
-          granted == true
-              ? 'Notifications re-enabled. Reminders were scheduled again.'
-              : 'Please allow notifications for StudyMate, then enable alarms and reminders on the next screen.',
+          notifGranted
+              ? 'Notifications & alarms re-enabled. Reminders were scheduled again.'
+              : 'Please allow notifications AND alarms for StudyMate in your phone settings.',
         ),
         behavior: SnackBarBehavior.floating,
       ),
@@ -441,6 +552,8 @@ class _StudyMateAppState extends State<StudyMateApp>
     bool? oneDayReminder,
     bool? oneHourReminder,
     bool? exactTimeReminder,
+    TimeOfDay? classAlarmTime,
+    String? alarmSoundPath,
   }) async {
     final SharedPreferences prefs = await SharedPreferences.getInstance();
 
@@ -464,10 +577,30 @@ class _StudyMateAppState extends State<StudyMateApp>
       await prefs.setBool('exact_time_reminder', exactTimeReminder);
     }
 
+    if (classAlarmTime != null) {
+      _classAlarmTime = classAlarmTime;
+      await prefs.setInt('class_alarm_hour', classAlarmTime.hour);
+      await prefs.setInt('class_alarm_minute', classAlarmTime.minute);
+    }
+
+    if (alarmSoundPath != null) {
+      _alarmSoundPath = alarmSoundPath;
+      await prefs.setString('alarm_sound_path', alarmSoundPath);
+    }
+
     if (mounted) {
       setState(() {});
     }
     await _refreshNotifications();
+
+    if (dailyReminder != null || classAlarmTime != null) {
+      _messengerKey.currentState?.showSnackBar(
+        SnackBar(
+          content: Text('Next wake-up alarm: ${_nextClassAlarmLabel()}'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
   }
 
   /// Creates a new subject record, then syncs the UI and reminders.
@@ -501,6 +634,7 @@ class _StudyMateAppState extends State<StudyMateApp>
       enableOneDayReminder: _dayBeforeReminderEnabled,
       enableOneHourReminder: _hourBeforeReminderEnabled,
       enableExactTimeReminder: _exactTimeReminderEnabled,
+      alarmSoundPath: _alarmSoundPath,
     );
     // NOTE: Do NOT call _refreshNotifications here — it cancels what we just scheduled.
   }
@@ -514,6 +648,7 @@ class _StudyMateAppState extends State<StudyMateApp>
       enableOneDayReminder: _dayBeforeReminderEnabled,
       enableOneHourReminder: _hourBeforeReminderEnabled,
       enableExactTimeReminder: _exactTimeReminderEnabled,
+      alarmSoundPath: _alarmSoundPath,
     );
   }
 
@@ -534,6 +669,7 @@ class _StudyMateAppState extends State<StudyMateApp>
         enableOneDayReminder: _dayBeforeReminderEnabled,
         enableOneHourReminder: _hourBeforeReminderEnabled,
         enableExactTimeReminder: _exactTimeReminderEnabled,
+        alarmSoundPath: _alarmSoundPath,
       );
     }
   }
@@ -587,6 +723,7 @@ class _StudyMateAppState extends State<StudyMateApp>
       enableOneDayReminder: _dayBeforeReminderEnabled,
       enableOneHourReminder: _hourBeforeReminderEnabled,
       enableExactTimeReminder: _exactTimeReminderEnabled,
+      alarmSoundPath: _alarmSoundPath,
     );
   }
 
@@ -598,6 +735,7 @@ class _StudyMateAppState extends State<StudyMateApp>
       enableOneDayReminder: _dayBeforeReminderEnabled,
       enableOneHourReminder: _hourBeforeReminderEnabled,
       enableExactTimeReminder: _exactTimeReminderEnabled,
+      alarmSoundPath: _alarmSoundPath,
     );
   }
 
@@ -637,8 +775,47 @@ class _StudyMateAppState extends State<StudyMateApp>
       enableOneDayReminder: _dayBeforeReminderEnabled,
       enableOneHourReminder: _hourBeforeReminderEnabled,
       enableExactTimeReminder: _exactTimeReminderEnabled,
+      classAlarmTime: _classAlarmTime,
+      alarmSoundPath: _alarmSoundPath,
       studentName: _studentName,
     );
+  }
+
+  String _nextClassAlarmLabel({TimeOfDay? alarmTime, bool? dailyReminder}) {
+    final bool isDailyReminderEnabled =
+        dailyReminder ?? _dailyReminderEnabled;
+    final TimeOfDay targetAlarmTime = alarmTime ?? _classAlarmTime;
+
+    if (!isDailyReminderEnabled) {
+      return 'Disabled';
+    }
+
+    final DateTime now = DateTime.now();
+
+    for (int i = 0; i < 14; i++) {
+      final DateTime candidateDate = now.add(Duration(days: i));
+      final DateTime candidateAlarmTime = DateTime(
+        candidateDate.year,
+        candidateDate.month,
+        candidateDate.day,
+        targetAlarmTime.hour,
+        targetAlarmTime.minute,
+      );
+
+      if (candidateAlarmTime.isBefore(now)) {
+        continue;
+      }
+
+      final bool hasClass = _subjects.any(
+        (Subject subject) => subject.occursOn(candidateDate),
+      );
+
+      if (hasClass) {
+        return DateFormat('EEE, MMM d - hh:mm a').format(candidateAlarmTime);
+      }
+    }
+
+    return 'No class day found in the next 14 days';
   }
 
   /// Returns the daily motivational quote based on the current date.
@@ -681,7 +858,7 @@ class _StudyMateAppState extends State<StudyMateApp>
       scaffoldBackgroundColor: isDark
           ? const Color(0xFF0F110E)
           : backgroundBeige,
-      cardColor: surfaceWhite,
+      cardColor: isDark ? const Color(0xFF1E211D) : surfaceWhite,
       textTheme: textTheme,
       appBarTheme: AppBarTheme(
         backgroundColor: Colors.transparent,
@@ -696,7 +873,7 @@ class _StudyMateAppState extends State<StudyMateApp>
       ),
       cardTheme: CardThemeData(
         elevation: 0,
-        color: surfaceWhite,
+        color: isDark ? const Color(0xFF1E211D) : surfaceWhite,
         margin: EdgeInsets.zero,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(28),
@@ -766,6 +943,114 @@ class _StudyMateAppState extends State<StudyMateApp>
     );
   }
 
+  void _openSettings() {
+    _navigatorKey.currentState?.push(
+      MaterialPageRoute(
+        builder: (context) => SettingsScreen(
+          studentName: _studentName,
+          isDarkMode: _isDarkMode,
+          dailyReminderEnabled: _dailyReminderEnabled,
+          oneDayReminderEnabled: _dayBeforeReminderEnabled,
+          oneHourReminderEnabled: _hourBeforeReminderEnabled,
+          exactTimeReminderEnabled: _exactTimeReminderEnabled,
+          classAlarmTime: _classAlarmTime,
+          nextClassAlarmLabel: _nextClassAlarmLabel(),
+          buildNextClassAlarmLabel: _nextClassAlarmLabel,
+          alarmSoundPath: _alarmSoundPath,
+          onSaveName: _saveStudentName,
+          onToggleDarkMode: _toggleDarkMode,
+          onUpdateNotifications: _updateNotificationSettings,
+          onClearData: _clearAllData,
+          onGrantExactAlarmPermission: () {
+            _repairNotifications();
+          },
+          onTestAlarm: () {
+            _sendTestAlarm();
+          },
+          onTestNotification: () {
+            _sendTestNotification();
+          },
+        ),
+      ),
+    );
+  }
+
+  void _openGrades() {
+    _navigatorKey.currentState?.push(
+      MaterialPageRoute(
+        builder: (context) => GradesScreen(
+          grades: _grades,
+          subjects: _subjects,
+          onAddGrade: _createGrade,
+          onDeleteGrade: _deleteGrade,
+        ),
+      ),
+    );
+  }
+
+  void _quickAddClass() {
+    showModalBottomSheet(
+      context: _navigatorKey.currentContext!,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => SubjectEditorSheet(
+        onSave: (subject) async {
+          Navigator.pop(context);
+          await _createSubject(subject);
+          setState(() => _selectedIndex = 1);
+        },
+      ),
+    );
+  }
+
+  void _quickAddTask() {
+    showModalBottomSheet(
+      context: _navigatorKey.currentContext!,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => AssignmentEditorSheet(
+        subjects: _subjects,
+        onSave: (assignment) async {
+          Navigator.pop(context);
+          await _createAssignment(assignment);
+          setState(() => _selectedIndex = 2);
+        },
+      ),
+    );
+  }
+
+  void _quickAddExam() {
+    showModalBottomSheet(
+      context: _navigatorKey.currentContext!,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => ExamEditorSheet(
+        subjects: _subjects,
+        onSave: (exam) async {
+          Navigator.pop(context);
+          await _createExam(exam);
+          setState(() => _selectedIndex = 3);
+        },
+      ),
+    );
+  }
+
+  void _quickAddGrade() {
+    showModalBottomSheet(
+      context: _navigatorKey.currentContext!,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => GradeEditorSheet(
+        subjects: _subjects,
+        onSave: (grade) async {
+          Navigator.pop(context);
+          await _createGrade(grade);
+          _openGrades();
+        },
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final ThemeData lightTheme = _buildTheme(Brightness.light);
@@ -773,77 +1058,65 @@ class _StudyMateAppState extends State<StudyMateApp>
 
     return MaterialApp(
       scaffoldMessengerKey: _messengerKey,
+      navigatorKey: _navigatorKey,
       title: 'StudyMate',
       debugShowCheckedModeBanner: false,
       theme: lightTheme,
       darkTheme: darkTheme,
       themeMode: _isDarkMode ? ThemeMode.dark : ThemeMode.light,
-      home: _isLoading
-          ? const _LoadingScreen()
-          : _isFirstOpen
-          ? OnboardingScreen(onFinish: _saveStudentName)
-          : MainNavigationShell(
-              selectedIndex: _selectedIndex,
-              onSelectTab: (int index) {
-                setState(() {
-                  _selectedIndex = index;
-                });
-              },
-              screens: <Widget>[
-                HomeScreen(
-                  studentName: _studentName,
-                  todaySubjects: List<Subject>.from(_subjects),
-                  assignments: _assignments,
-                  quote: _quoteForToday(),
-                ),
-                ScheduleScreen(
-                  subjects: _subjects,
-                  onAddSubject: _createSubject,
-                  onUpdateSubject: _updateSubject,
-                  onDeleteSubject: _deleteSubject,
-                ),
-                AssignmentScreen(
-                  assignments: _assignments,
-                  subjects: _subjects,
-                  onAddAssignment: _createAssignment,
-                  onUpdateAssignment: _updateAssignment,
-                  onToggleStatus: _toggleAssignmentStatus,
-                  onDeleteAssignment: _deleteAssignment,
-                ),
-                ExamsScreen(
-                  exams: _exams,
-                  subjects: _subjects,
-                  onAddExam: _createExam,
-                  onUpdateExam: _updateExam,
-                  onDeleteExam: _deleteExam,
-                ),
-                const FocusTimerScreen(),
-                GradesScreen(
-                  grades: _grades,
-                  subjects: _subjects,
-                  onAddGrade: _createGrade,
-                  onDeleteGrade: _deleteGrade,
-                ),
-                SettingsScreen(
-                  studentName: _studentName,
-                  isDarkMode: _isDarkMode,
-                  dailyReminderEnabled: _dailyReminderEnabled,
-                  oneDayReminderEnabled: _dayBeforeReminderEnabled,
-                  oneHourReminderEnabled: _hourBeforeReminderEnabled,
-                  exactTimeReminderEnabled: _exactTimeReminderEnabled,
-                  onSaveName: _saveStudentName,
-                  onToggleDarkMode: _toggleDarkMode,
-                  onUpdateNotifications: _updateNotificationSettings,
-                  onClearData: _clearAllData,
-                  onGrantExactAlarmPermission: () {
-                    _repairNotifications();
+      routes: {
+        '/download': (context) => const AppDownloadScreen(),
+      },
+      home: kIsWeb
+          ? const AppDownloadScreen()
+          : _isLoading
+              ? const _LoadingScreen()
+              : _isFirstOpen
+                  ? OnboardingScreen(onFinish: _saveStudentName)
+                  : MainNavigationShell(
+                  selectedIndex: _selectedIndex,
+                  onSelectTab: (int index) {
+                    setState(() {
+                      _selectedIndex = index;
+                    });
                   },
-                  onTestNotification: () {
-                    _sendTestNotification();
-                  },
+                  onOpenSettings: _openSettings,
+                  onOpenGrades: _openGrades,
+                  screens: <Widget>[
+                    HomeScreen(
+                      studentName: _studentName,
+                      todaySubjects: List<Subject>.from(_subjects),
+                      assignments: _assignments,
+                      quote: _quoteForToday(),
+                      onAddClass: _quickAddClass,
+                      onAddTask: _quickAddTask,
+                      onAddExam: _quickAddExam,
+                      onAddGrade: _quickAddGrade,
+                    ),
+                    ScheduleScreen(
+                      subjects: _subjects,
+                      onAddSubject: _createSubject,
+                      onUpdateSubject: _updateSubject,
+                      onDeleteSubject: _deleteSubject,
+                    ),
+                    AssignmentScreen(
+                      assignments: _assignments,
+                      subjects: _subjects,
+                      onAddAssignment: _createAssignment,
+                      onUpdateAssignment: _updateAssignment,
+                      onToggleStatus: _toggleAssignmentStatus,
+                      onDeleteAssignment: _deleteAssignment,
+                    ),
+                    ExamsScreen(
+                      exams: _exams,
+                      subjects: _subjects,
+                      onAddExam: _createExam,
+                      onUpdateExam: _updateExam,
+                      onDeleteExam: _deleteExam,
+                    ),
+                    const FocusTimerScreen(),
+                  ],
                 ),
-              ],
-            ),
     );
   }
 }
@@ -854,20 +1127,52 @@ class MainNavigationShell extends StatelessWidget {
     required this.selectedIndex,
     required this.onSelectTab,
     required this.screens,
+    required this.onOpenSettings,
+    required this.onOpenGrades,
   });
 
   final int selectedIndex;
   final ValueChanged<int> onSelectTab;
   final List<Widget> screens;
+  final VoidCallback onOpenSettings;
+  final VoidCallback onOpenGrades;
 
   /// Wraps tab changes in a smooth fade-and-slide transition.
   @override
   Widget build(BuildContext context) {
-    final bool isDark = Theme.of(context).brightness == Brightness.dark;
     final Color bgColor = Theme.of(context).scaffoldBackgroundColor;
 
     return Scaffold(
       backgroundColor: bgColor,
+      appBar: AppBar(
+        title: Text(
+          selectedIndex == 0 ? 'Dashboard' :
+          selectedIndex == 1 ? 'Class Schedule' :
+          selectedIndex == 2 ? 'My Tasks' :
+          selectedIndex == 3 ? 'Exams' : 'Focus Timer',
+          style: GoogleFonts.inter(
+            fontWeight: FontWeight.w800,
+            fontSize: 22,
+          ),
+        ),
+        centerTitle: false,
+        elevation: 0,
+        backgroundColor: Colors.transparent,
+        surfaceTintColor: Colors.transparent,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.bar_chart_rounded),
+            onPressed: onOpenGrades,
+            tooltip: 'Grades',
+          ),
+          IconButton(
+            icon: const Icon(Icons.person_outline_rounded),
+            onPressed: onOpenSettings,
+            tooltip: 'Profile',
+          ),
+          const SizedBox(width: 8),
+        ],
+      ),
       body: SafeArea(
         child: AnimatedSwitcher(
           duration: const Duration(milliseconds: 350),
@@ -896,7 +1201,7 @@ class MainNavigationShell extends StatelessWidget {
       ),
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF1A1C19) : Colors.white,
+          color: Theme.of(context).cardColor,
           border: Border(
             top: BorderSide(
               color: Theme.of(
@@ -936,16 +1241,6 @@ class MainNavigationShell extends StatelessWidget {
               icon: Icon(Icons.timer_outlined),
               selectedIcon: Icon(Icons.timer_rounded),
               label: 'Focus',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.bar_chart_outlined),
-              selectedIcon: Icon(Icons.bar_chart_rounded),
-              label: 'Grades',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.person_outline_rounded),
-              selectedIcon: Icon(Icons.person_rounded),
-              label: 'Profile',
             ),
           ],
         ),

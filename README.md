@@ -32,3 +32,17 @@ flutter run -d chrome
 
 ## Promotional Website
 The promotional website can be found in the `website/` directory. Open `website/index.html` in any browser to view it.
+
+
+flutter build web --release
+
+
+flutter build web --release
+cd build/web
+vercel . --prod --yes
+
+
+# Push to Github
+git add .
+git commit -m "commit message"
+git push origin main

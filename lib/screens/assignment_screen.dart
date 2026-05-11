@@ -1,11 +1,14 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 
 import '../models/assignment.dart';
 import '../models/subject.dart';
 import '../widgets/assignment_card.dart';
+import '../widgets/mascot_status_card.dart';
+import '../widgets/editor_sheets.dart';
 
 class AssignmentScreen extends StatefulWidget {
   const AssignmentScreen({
@@ -52,7 +55,6 @@ class _AssignmentScreenState extends State<AssignmentScreen> {
     super.dispose();
   }
 
-  /// Filters assignments based on the currently selected subject and priority.
   List<Assignment> _filteredAssignments() {
     return widget.assignments.where((Assignment assignment) {
         final bool matchesSubject =
@@ -69,7 +71,6 @@ class _AssignmentScreenState extends State<AssignmentScreen> {
     return a.year == b.year && a.month == b.month && a.day == b.day;
   }
 
-  /// Opens the add or edit assignment sheet.
   Future<void> _openAssignmentSheet([Assignment? assignment]) async {
     await showModalBottomSheet<void>(
       context: context,
@@ -92,45 +93,73 @@ class _AssignmentScreenState extends State<AssignmentScreen> {
     );
   }
 
+  Widget _buildMascotCard(
+    List<Assignment> filtered,
+    List<Assignment> todayAssignments,
+    List<Assignment> overdueAssignments,
+    List<Assignment> upcomingAssignments,
+    List<Assignment> completedAssignments,
+  ) {
+    String mascotImage;
+    String statusTitle;
+    String statusMessage;
+
+    final int overdueCount = overdueAssignments.length;
+    final int pendingCount = filtered.where((a) => !a.isCompleted).length;
+    final int completedCount = completedAssignments.length;
+    final bool allDone = pendingCount == 0 && completedCount > 0;
+
+    if (filtered.isEmpty) {
+      mascotImage = 'assets/images/mascot_icandoit.png';
+      statusTitle = 'Empty Board';
+      statusMessage = 'No tasks yet. Add one to get started!';
+    } else if (overdueCount > 0) {
+      mascotImage = 'assets/images/mascot_sad.png';
+      statusTitle = 'Overdue Alert!';
+      statusMessage = 'You have $overdueCount overdue task(s). Catch up!';
+    } else if (allDone) {
+      mascotImage = 'assets/images/celebrating.png';
+      statusTitle = 'All Done!';
+      statusMessage = 'Every task is complete. You\'re on fire! 🔥';
+    } else if (pendingCount > 8) {
+      mascotImage = 'assets/images/mascout_tired.png';
+      statusTitle = 'Heavy Load!';
+      statusMessage = 'That\'s a lot of tasks. Take it step by step.';
+    } else if (todayAssignments.isNotEmpty) {
+      mascotImage = 'assets/images/mascot_busy.png';
+      statusTitle = 'Due Today!';
+      statusMessage = '${todayAssignments.length} task(s) due today. Focus up!';
+    } else if (upcomingAssignments.isNotEmpty) {
+      mascotImage = 'assets/images/mascot_happy.png';
+      statusTitle = 'Looking Good!';
+      statusMessage = '${upcomingAssignments.length} upcoming. Stay ahead!';
+    } else {
+      mascotImage = 'assets/images/mascot_happy.png';
+      statusTitle = 'Task Board';
+      statusMessage = 'You\'re managing ${filtered.length} assignments.';
+    }
+
+    return MascotStatusCard(
+      mascotImage: mascotImage,
+      statusTitle: statusTitle,
+      statusMessage: statusMessage,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final List<Assignment> filtered = _filteredAssignments();
     final DateTime now = DateTime.now();
     final DateTime today = DateTime(now.year, now.month, now.day);
-    final List<Assignment> todayAssignments = filtered
-        .where(
-          (Assignment assignment) =>
-              !assignment.isCompleted &&
-              _isSameDate(assignment.dueDate, today) &&
-              !assignment.dueDate.isBefore(now),
-        )
-        .toList();
-    final List<Assignment> overdueAssignments = filtered
-        .where(
-          (Assignment assignment) =>
-              !assignment.isCompleted && assignment.dueDate.isBefore(now),
-        )
-        .toList();
-    final List<Assignment> upcomingAssignments = filtered
-        .where(
-          (Assignment assignment) =>
-              !assignment.isCompleted &&
-              assignment.dueDate.isAfter(now) &&
-              !_isSameDate(assignment.dueDate, today),
-        )
-        .toList();
-    final List<Assignment> completedAssignments = filtered
-        .where((Assignment assignment) => assignment.isCompleted)
-        .toList();
+    
+    final List<Assignment> todayAssignments = filtered.where((a) => !a.isCompleted && _isSameDate(a.dueDate, today) && !a.dueDate.isBefore(now)).toList();
+    final List<Assignment> overdueAssignments = filtered.where((a) => !a.isCompleted && a.dueDate.isBefore(now)).toList();
+    final List<Assignment> upcomingAssignments = filtered.where((a) => !a.isCompleted && a.dueDate.isAfter(now) && !_isSameDate(a.dueDate, today)).toList();
+    final List<Assignment> completedAssignments = filtered.where((a) => a.isCompleted).toList();
 
-    final List<String> subjectOptions = <String>{
-      'All',
-      ...widget.subjects.map((Subject subject) => subject.name),
-      ...widget.assignments.map((Assignment assignment) => assignment.subject),
-    }.toList();
+    final List<String> subjectOptions = <String>{'All', ...widget.subjects.map((s) => s.name), ...widget.assignments.map((a) => a.subject)}.toList();
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Assignments')),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _openAssignmentSheet,
         icon: const Icon(Icons.add_task_rounded),
@@ -139,102 +168,112 @@ class _AssignmentScreenState extends State<AssignmentScreen> {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(20, 8, 20, 120),
         children: <Widget>[
-          Wrap(
-            spacing: 12,
-            runSpacing: 12,
-            children: <Widget>[
-              _FilterDropdown(
-                label: 'Subject',
-                initialValue: _subjectFilter,
-                items: subjectOptions,
-                onChanged: (String? value) {
-                  if (value != null) {
-                    setState(() => _subjectFilter = value);
-                  }
-                },
-              ),
-              _FilterDropdown(
-                label: 'Priority',
-                initialValue: _priorityFilter,
-                items: const <String>['All', 'Low', 'Medium', 'High'],
-                onChanged: (String? value) {
-                  if (value != null) {
-                    setState(() => _priorityFilter = value);
-                  }
-                },
-              ),
-            ],
+          // Dynamic Mascot Status Card
+          _buildMascotCard(filtered, todayAssignments, overdueAssignments, upcomingAssignments, completedAssignments),
+          const SizedBox(height: 24),
+          
+          // Filters
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                _FilterChip(
+                  label: 'Subject: $_subjectFilter',
+                  onTap: () async {
+                    final String? selected = await _showFilterDialog('Select Subject', subjectOptions, _subjectFilter);
+                    if (selected != null) setState(() => _subjectFilter = selected);
+                  },
+                ),
+                const SizedBox(width: 8),
+                _FilterChip(
+                  label: 'Priority: $_priorityFilter',
+                  onTap: () async {
+                    final String? selected = await _showFilterDialog('Select Priority', ['All', 'Low', 'Medium', 'High'], _priorityFilter);
+                    if (selected != null) setState(() => _priorityFilter = selected);
+                  },
+                ),
+              ],
+            ),
           ),
-          const SizedBox(height: 22),
-          _AssignmentGroup(
-            title: 'Today',
-            subtitle: 'Deadlines due today',
-            assignments: todayAssignments,
-            onEdit: _openAssignmentSheet,
-            onToggleStatus: widget.onToggleStatus,
-            onDelete: widget.onDeleteAssignment,
-          ),
-          const SizedBox(height: 18),
-          _AssignmentGroup(
-            title: 'Upcoming',
-            subtitle: 'Future deadlines',
-            assignments: upcomingAssignments,
-            onEdit: _openAssignmentSheet,
-            onToggleStatus: widget.onToggleStatus,
-            onDelete: widget.onDeleteAssignment,
-          ),
-          const SizedBox(height: 18),
-          _AssignmentGroup(
-            title: 'Overdue',
-            subtitle: 'Missed deadlines',
-            assignments: overdueAssignments,
-            onEdit: _openAssignmentSheet,
-            onToggleStatus: widget.onToggleStatus,
-            onDelete: widget.onDeleteAssignment,
-          ),
-          const SizedBox(height: 18),
-          _AssignmentGroup(
-            title: 'Completed',
-            subtitle: 'Finished work',
-            assignments: completedAssignments,
-            onEdit: _openAssignmentSheet,
-            onToggleStatus: widget.onToggleStatus,
-            onDelete: widget.onDeleteAssignment,
-          ),
+          const SizedBox(height: 32),
+          
+          if (filtered.isEmpty)
+            _EmptyTasksState(onAddPressed: _openAssignmentSheet)
+          else ...[
+            _AssignmentGroup(
+              title: 'Today',
+              subtitle: 'Deadlines due today',
+              assignments: todayAssignments,
+              onEdit: _openAssignmentSheet,
+              onToggleStatus: widget.onToggleStatus,
+              onDelete: widget.onDeleteAssignment,
+            ),
+            const SizedBox(height: 24),
+            _AssignmentGroup(
+              title: 'Upcoming',
+              subtitle: 'Future deadlines',
+              assignments: upcomingAssignments,
+              onEdit: _openAssignmentSheet,
+              onToggleStatus: widget.onToggleStatus,
+              onDelete: widget.onDeleteAssignment,
+            ),
+            const SizedBox(height: 24),
+            _AssignmentGroup(
+              title: 'Overdue',
+              subtitle: 'Missed deadlines',
+              assignments: overdueAssignments,
+              onEdit: _openAssignmentSheet,
+              onToggleStatus: widget.onToggleStatus,
+              onDelete: widget.onDeleteAssignment,
+            ),
+            const SizedBox(height: 24),
+            _AssignmentGroup(
+              title: 'Completed',
+              subtitle: 'Finished work',
+              assignments: completedAssignments,
+              onEdit: _openAssignmentSheet,
+              onToggleStatus: widget.onToggleStatus,
+              onDelete: widget.onDeleteAssignment,
+            ),
+          ],
         ],
+      ),
+    );
+  }
+
+  Future<String?> _showFilterDialog(String title, List<String> items, String current) async {
+    return showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(title, style: GoogleFonts.inter(fontWeight: FontWeight.w800)),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: items.map((item) => ListTile(
+              title: Text(item),
+              trailing: item == current ? Icon(Icons.check_circle_rounded, color: Theme.of(context).colorScheme.primary) : null,
+              onTap: () => Navigator.pop(context, item),
+            )).toList(),
+          ),
+        ),
       ),
     );
   }
 }
 
-class _FilterDropdown extends StatelessWidget {
-  const _FilterDropdown({
-    required this.label,
-    required this.initialValue,
-    required this.items,
-    required this.onChanged,
-  });
-
+class _FilterChip extends StatelessWidget {
+  const _FilterChip({required this.label, required this.onTap});
   final String label;
-  final String initialValue;
-  final List<String> items;
-  final ValueChanged<String?> onChanged;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: 170,
-      child: DropdownButtonFormField<String>(
-        initialValue: initialValue,
-        decoration: InputDecoration(labelText: label),
-        items: items
-            .map(
-              (String item) =>
-                  DropdownMenuItem<String>(value: item, child: Text(item)),
-            )
-            .toList(),
-        onChanged: onChanged,
-      ),
+    return ActionChip(
+      onPressed: onTap,
+      label: Text(label, style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700)),
+      backgroundColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.05),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide.none),
+      padding: const EdgeInsets.symmetric(horizontal: 4),
     );
   }
 }
@@ -258,348 +297,60 @@ class _AssignmentGroup extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (assignments.isEmpty) return const SizedBox.shrink();
+    
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        Text(
-          title,
-          style: Theme.of(
-            context,
-          ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          subtitle,
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-            color: Theme.of(
-              context,
-            ).colorScheme.onSurface.withValues(alpha: 0.68),
-          ),
-        ),
+        Text(title, style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w800)),
+        Text(subtitle, style: GoogleFonts.inter(fontSize: 12, color: Colors.grey)),
         const SizedBox(height: 12),
-        if (assignments.isEmpty)
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(18),
-            decoration: BoxDecoration(
-              color: Theme.of(context).cardColor,
-              borderRadius: BorderRadius.circular(24),
-            ),
-            child: Text(
-              'No assignments in this section.',
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
-          )
-        else
-          ...assignments.map(
-            (Assignment assignment) => Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: AssignmentCard(
-                assignment: assignment,
-                onTap: () => onEdit(assignment),
-                onToggleStatus: () => onToggleStatus(assignment),
-                onDelete: () => onDelete(assignment.id!),
-              ),
-            ),
+        ...assignments.map((assignment) => Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: AssignmentCard(
+            assignment: assignment,
+            onTap: () => onEdit(assignment),
+            onToggleStatus: () => onToggleStatus(assignment),
+            onDelete: () => onDelete(assignment.id!),
           ),
+        )),
       ],
     );
   }
 }
 
-class AssignmentEditorSheet extends StatefulWidget {
-  const AssignmentEditorSheet({
-    super.key,
-    required this.subjects,
-    required this.onSave,
-    this.assignment,
-  });
-
-  final List<Subject> subjects;
-  final ValueChanged<Assignment> onSave;
-  final Assignment? assignment;
-
-  @override
-  State<AssignmentEditorSheet> createState() => _AssignmentEditorSheetState();
-}
-
-class _AssignmentEditorSheetState extends State<AssignmentEditorSheet> {
-  final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
-  final TextEditingController _titleController = TextEditingController();
-  final TextEditingController _subjectController = TextEditingController();
-  static const Duration _minimumLeadTime = Duration(minutes: 1);
-  late DateTime _dueDate;
-  AssignmentPriority _priority = AssignmentPriority.medium;
-
-  @override
-  void initState() {
-    super.initState();
-    final Assignment? assignment = widget.assignment;
-    _titleController.text = assignment?.title ?? '';
-    _subjectController.text = assignment?.subject ?? '';
-    _dueDate =
-        assignment?.dueDate ?? DateTime.now().add(const Duration(days: 1));
-    _priority = assignment?.priority ?? AssignmentPriority.medium;
-  }
-
-  @override
-  void dispose() {
-    _titleController.dispose();
-    _subjectController.dispose();
-    super.dispose();
-  }
-
-  /// Lets the user choose both due date and due time for a task.
-  Future<void> _pickDueDateTime() async {
-    final DateTime? pickedDate = await showDatePicker(
-      context: context,
-      firstDate: DateTime(2020),
-      lastDate: DateTime(2035),
-      initialDate: _dueDate,
-    );
-
-    if (pickedDate == null || !mounted) {
-      return;
-    }
-
-    final TimeOfDay? pickedTime = await showTimePicker(
-      context: context,
-      initialTime: TimeOfDay.fromDateTime(_dueDate),
-    );
-
-    if (pickedTime == null) {
-      return;
-    }
-
-    setState(() {
-      _dueDate = DateTime(
-        pickedDate.year,
-        pickedDate.month,
-        pickedDate.day,
-        pickedTime.hour,
-        pickedTime.minute,
-      );
-    });
-  }
-
-  /// Validates and returns the final assignment back to the parent screen.
-  void _submit() {
-    debugPrint('[AssignmentEditor] Attempting to save...');
-    if (!_formKey.currentState!.validate()) {
-      debugPrint('[AssignmentEditor] Validation failed.');
-      return;
-    }
-
-    debugPrint(
-      '[AssignmentEditor] Validation passed. Title: ${_titleController.text}',
-    );
-
-    final DateTime now = DateTime.now();
-    if (!_dueDate.isAfter(now)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Note: Reminder skipped because the due time has already passed.',
-          ),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-    }
-
-    final Assignment assignment = Assignment(
-      id: widget.assignment?.id,
-      title: _titleController.text.trim(),
-      subject: _subjectController.text.trim(),
-      dueDate: _dueDate,
-      priority: _priority,
-      isCompleted: widget.assignment?.isCompleted ?? false,
-      completedAt: widget.assignment?.completedAt,
-    );
-    widget.onSave(assignment);
-  }
+class _EmptyTasksState extends StatelessWidget {
+  const _EmptyTasksState({required this.onAddPressed});
+  final VoidCallback onAddPressed;
 
   @override
   Widget build(BuildContext context) {
-    final MediaQueryData mediaQuery = MediaQuery.of(context);
-    final List<String> subjectSuggestions = <String>{
-      ...widget.subjects.map((Subject subject) => subject.name),
-      if (_subjectController.text.isNotEmpty) _subjectController.text,
-    }.toList()..sort();
-
-    return Padding(
-      padding: EdgeInsets.only(bottom: mediaQuery.viewInsets.bottom),
-      child: Container(
-        decoration: BoxDecoration(
-          color: Theme.of(context).scaffoldBackgroundColor,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
-        ),
-        padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
-        child: SingleChildScrollView(
-          child: Form(
-            key: _formKey,
-            autovalidateMode: AutovalidateMode.onUserInteraction,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Center(
-                  child: Container(
-                    width: 44,
-                    height: 5,
-                    decoration: BoxDecoration(
-                      color: Theme.of(context).dividerColor,
-                      borderRadius: BorderRadius.circular(99),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 18),
-                Text(
-                  widget.assignment == null
-                      ? 'Add Assignment'
-                      : 'Edit Assignment',
-                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(height: 18),
-                TextFormField(
-                  controller: _titleController,
-                  decoration: const InputDecoration(labelText: 'Title'),
-                  validator: (String? value) {
-                    if (value == null || value.trim().isEmpty) {
-                      return 'Enter a title.';
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 12),
-                const SizedBox(height: 12),
-                DropdownButtonFormField<String>(
-                  value:
-                      widget.subjects.any(
-                        (s) => s.name == _subjectController.text,
-                      )
-                      ? _subjectController.text
-                      : null,
-                  decoration: const InputDecoration(
-                    labelText: 'Subject',
-                    prefixIcon: Icon(Icons.book_rounded),
-                  ),
-                  items: [
-                    ...widget.subjects.map(
-                      (s) =>
-                          DropdownMenuItem(value: s.name, child: Text(s.name)),
-                    ),
-                    if (_subjectController.text.isNotEmpty &&
-                        !widget.subjects.any(
-                          (s) => s.name == _subjectController.text,
-                        ))
-                      DropdownMenuItem(
-                        value: _subjectController.text,
-                        child: Text(_subjectController.text),
-                      ),
-                  ],
-                  onChanged: (value) {
-                    if (value != null) {
-                      setState(() => _subjectController.text = value);
-                    }
-                  },
-                ),
-                const SizedBox(height: 12),
-                TextFormField(
-                  controller: _subjectController,
-                  onChanged: (value) => setState(() {}),
-                  decoration: const InputDecoration(
-                    labelText: 'Subject Name',
-                    helperText: 'Type a new subject or select from above',
-                    prefixIcon: Icon(Icons.edit_note_rounded),
-                  ),
-                  validator: (value) => (value == null || value.trim().isEmpty)
-                      ? 'Subject is required'
-                      : null,
-                ),
-                const SizedBox(height: 20),
-                InkWell(
-                  onTap: _pickDueDateTime,
-                  borderRadius: BorderRadius.circular(16),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 12,
-                    ),
-                    decoration: BoxDecoration(
-                      border: Border.all(color: Theme.of(context).dividerColor),
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.event_rounded,
-                          color: Theme.of(context).colorScheme.primary,
-                        ),
-                        const SizedBox(width: 12),
-                        Text(
-                          'Due: ${DateFormat('MMM d, yyyy - hh:mm a').format(_dueDate)}',
-                          style: Theme.of(context).textTheme.bodyLarge
-                              ?.copyWith(fontWeight: FontWeight.w600),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 18),
-                Text(
-                  'Priority',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                SegmentedButton<AssignmentPriority>(
-                  segments: const <ButtonSegment<AssignmentPriority>>[
-                    ButtonSegment<AssignmentPriority>(
-                      value: AssignmentPriority.low,
-                      label: Text('Low'),
-                    ),
-                    ButtonSegment<AssignmentPriority>(
-                      value: AssignmentPriority.medium,
-                      label: Text('Medium'),
-                    ),
-                    ButtonSegment<AssignmentPriority>(
-                      value: AssignmentPriority.high,
-                      label: Text('High'),
-                    ),
-                  ],
-                  selected: <AssignmentPriority>{_priority},
-                  onSelectionChanged: (Set<AssignmentPriority> selection) {
-                    setState(() {
-                      _priority = selection.first;
-                    });
-                  },
-                ),
-                const SizedBox(height: 32),
-                SizedBox(
-                  width: double.infinity,
-                  height: 56,
-                  child: FilledButton.icon(
-                    onPressed: _submit,
-                    icon: const Icon(Icons.check_circle_outline_rounded),
-                    label: Text(
-                      widget.assignment == null
-                          ? 'Save Assignment'
-                          : 'Update Assignment',
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
+    return Center(
+      child: Column(
+        children: [
+          const SizedBox(height: 40),
+          Image.asset('assets/images/mascot_icandoit.png', height: 160),
+          const SizedBox(height: 24),
+          Text('Nothing to do!', style: GoogleFonts.inter(fontSize: 20, fontWeight: FontWeight.w800)),
+          const SizedBox(height: 8),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 40),
+            child: Text(
+              'Your task board is completely empty. Add an assignment to get started!',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.inter(color: Colors.grey, height: 1.5),
             ),
           ),
-        ),
+          const SizedBox(height: 32),
+          FilledButton.icon(
+            onPressed: onAddPressed,
+            icon: const Icon(Icons.add_task_rounded),
+            label: const Text('Add First Task'),
+          ),
+        ],
       ),
     );
   }
 }
+
+
