@@ -100,7 +100,9 @@ class Subject {
       id: map['id'] as int?,
       name: map['name'] as String,
       room: map['room'] as String,
-      slots: slotsJson.map((s) => ScheduleSlot.fromMap(s as Map<String, dynamic>)).toList(),
+      slots: slotsJson
+          .map((s) => ScheduleSlot.fromMap(s as Map<String, dynamic>))
+          .toList(),
       colorValue: map['colorValue'] as int,
       units: (map['units'] as num?)?.toDouble() ?? 3.0,
       notes: map['notes'] as String? ?? '',

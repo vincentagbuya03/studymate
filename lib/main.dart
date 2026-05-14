@@ -6,9 +6,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:sqflite_common_ffi_web/sqflite_ffi_web.dart';
 
-
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 
 import 'package:shared_preferences/shared_preferences.dart';
@@ -83,6 +81,7 @@ class _StudyMateAppState extends State<StudyMateApp>
   String _studentName = 'User';
   int _selectedIndex = 0;
   bool _isFirstOpen = false;
+  bool _waitingForExactAlarmPermission = false;
   Timer? _foregroundReminderTimer;
 
   @override
@@ -96,10 +95,17 @@ class _StudyMateAppState extends State<StudyMateApp>
   StreamSubscription? _ringingSubscription;
 
   void _listenToAlarms() {
-    _ringingSubscription = AlarmService.instance.ringingStream.listen((alarmSet) {
+    _ringingSubscription = AlarmService.instance.ringingStream.listen((
+      alarmSet,
+    ) {
       if (!mounted) return;
       for (final settings in alarmSet.alarms) {
-        _showAlarmRingScreen(settings.id, settings.notificationSettings.title, settings.notificationSettings.body);
+        _showAlarmRingScreen(
+          settings.id,
+          settings.dateTime,
+          settings.notificationSettings.title,
+          settings.notificationSettings.body,
+        );
       }
     });
   }
@@ -111,29 +117,43 @@ class _StudyMateAppState extends State<StudyMateApp>
     if (ringing.isNotEmpty) {
       final settings = ringing.first;
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        _showAlarmRingScreen(settings.id, settings.notificationSettings.title, settings.notificationSettings.body);
+        _showAlarmRingScreen(
+          settings.id,
+          settings.dateTime,
+          settings.notificationSettings.title,
+          settings.notificationSettings.body,
+        );
       });
     }
   }
 
   bool _isAlarmScreenShowing = false;
 
-  void _showAlarmRingScreen(int alarmId, String title, String body) {
+  void _showAlarmRingScreen(
+    int alarmId,
+    DateTime alarmDateTime,
+    String title,
+    String body,
+  ) {
     if (!mounted || _isAlarmScreenShowing) return;
     _isAlarmScreenShowing = true;
 
-    _navigatorKey.currentState?.push(
-      MaterialPageRoute(
-        builder: (context) => AlarmRingScreen(
-          alarmId: alarmId,
-          title: title,
-          body: body,
-        ),
-      ),
-    ).then((_) {
-      _isAlarmScreenShowing = false;
-      _refreshNotifications();
-    });
+    _navigatorKey.currentState
+        ?.push<bool>(
+          MaterialPageRoute<bool>(
+            builder: (context) =>
+                AlarmRingScreen(alarmId: alarmId, title: title, body: body),
+          ),
+        )
+        .then((bool? stopped) async {
+          _isAlarmScreenShowing = false;
+          if (stopped == true) {
+            await _notificationService.markDailyReminderHandled(
+              alarmId: alarmId,
+              alarmDateTime: alarmDateTime,
+            );
+          }
+        });
   }
 
   @override
@@ -150,7 +170,7 @@ class _StudyMateAppState extends State<StudyMateApp>
       _startForegroundReminderWatcher();
       _runForegroundReminderCheck();
       _checkForRingingAlarms();
-      _refreshNotifications();
+      _rescheduleIfExactAlarmPermissionRecovered();
       return;
     }
 
@@ -196,7 +216,9 @@ class _StudyMateAppState extends State<StudyMateApp>
     _dayBeforeReminderEnabled = prefs.getBool('day_before_reminder') ?? true;
     _hourBeforeReminderEnabled = prefs.getBool('hour_before_reminder') ?? true;
     _exactTimeReminderEnabled = prefs.getBool('exact_time_reminder') ?? true;
-    _alarmSoundPath = prefs.getString('alarm_sound_path') ?? 'assets/audio/alarm_clock_old.mp3';
+    _alarmSoundPath =
+        prefs.getString('alarm_sound_path') ??
+        'assets/audio/alarm_clock_old.mp3';
     final int? alarmHour = prefs.getInt('class_alarm_hour');
     final int? alarmMinute = prefs.getInt('class_alarm_minute');
     if (alarmHour != null && alarmMinute != null) {
@@ -371,7 +393,6 @@ class _StudyMateAppState extends State<StudyMateApp>
     _queueNotificationPermissionPrompt();
   }
 
-  /// Waits until a visible screen is rendered before showing Android's permission dialog.
   void _queueNotificationPermissionPrompt() {
     if (kIsWeb) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -382,17 +403,19 @@ class _StudyMateAppState extends State<StudyMateApp>
     });
   }
 
-  /// Prompts once per app data lifecycle to avoid repeated system dialogs on startup.
-  /// Handles BOTH notification permission AND exact alarm permission.
   Future<void> _requestNotificationPermissionIfNeeded() async {
     final SharedPreferences prefs = await SharedPreferences.getInstance();
     final bool hasPrompted =
         prefs.getBool(_notificationPermissionPromptedKey) ?? false;
 
-    if (hasPrompted || !mounted || _isLoading) {
+    if (!mounted || _isLoading) {
+      return;
+    }
+
+    if (hasPrompted) {
       // Even if we already prompted, always check exact alarm on every launch
       // because the user might have revoked it from system settings.
-      await _ensureExactAlarmPermission();
+      await _ensureExactAlarmPermission(rescheduleIfGranted: true);
       return;
     }
 
@@ -409,15 +432,19 @@ class _StudyMateAppState extends State<StudyMateApp>
     // Step 2: Request SCHEDULE_EXACT_ALARM permission
     // This is separate because on Android 12+ release builds, exact alarm
     // permission is NOT auto-granted (unlike debug builds).
-    await _ensureExactAlarmPermission();
+    final bool exactAlarmGranted = await _ensureExactAlarmPermission(
+      rescheduleIfGranted: false,
+    );
 
     await _refreshNotifications();
 
     _messengerKey.currentState?.showSnackBar(
       SnackBar(
         content: Text(
-          notifGranted
+          notifGranted && exactAlarmGranted
               ? 'Notifications Enabled!'
+              : notifGranted
+              ? 'Notifications enabled, but exact alarms still need Alarms & reminders permission.'
               : 'Notifications are restricted. Please check your phone settings.',
         ),
         behavior: SnackBarBehavior.floating,
@@ -428,9 +455,59 @@ class _StudyMateAppState extends State<StudyMateApp>
   /// Ensures exact alarm permission is granted. On Android 12+ release builds
   /// this permission is NOT automatically granted unlike debug builds.
   /// Opens the system settings page if not granted.
-  Future<void> _ensureExactAlarmPermission() async {
-    if (kIsWeb) return;
-    await _notificationService.requestExactAlarmPermission();
+  Future<bool> _ensureExactAlarmPermission({
+    bool rescheduleIfGranted = false,
+  }) async {
+    if (kIsWeb) return true;
+    final bool alreadyGranted = await _notificationService
+        .checkExactAlarmPermission();
+    if (alreadyGranted) {
+      _waitingForExactAlarmPermission = false;
+      return true;
+    }
+
+    _waitingForExactAlarmPermission = true;
+    final bool granted = await _notificationService
+        .requestExactAlarmPermission();
+    if (granted) {
+      _waitingForExactAlarmPermission = false;
+      if (rescheduleIfGranted) {
+        await _refreshNotifications();
+      }
+      return true;
+    }
+
+    if (!granted) {
+      _messengerKey.currentState?.showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Exact alarms are still blocked. Enable Alarms & reminders for StudyMate in Android settings.',
+          ),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+    return false;
+  }
+
+  Future<void> _rescheduleIfExactAlarmPermissionRecovered() async {
+    if (!_waitingForExactAlarmPermission || !mounted || _isLoading) {
+      return;
+    }
+
+    final bool granted = await _notificationService.checkExactAlarmPermission();
+    if (!granted) {
+      return;
+    }
+
+    _waitingForExactAlarmPermission = false;
+    await _refreshNotifications();
+    _messengerKey.currentState?.showSnackBar(
+      const SnackBar(
+        content: Text('Alarms re-enabled. Reminders were scheduled again.'),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
   }
 
   /// Sends a one-tap test notification after confirming runtime access.
@@ -464,9 +541,28 @@ class _StudyMateAppState extends State<StudyMateApp>
   }
 
   Future<void> _sendTestAlarm() async {
+    final bool notifGranted = await _notificationService
+        .requestNotificationsPermission();
+    if (!notifGranted) {
+      _messengerKey.currentState?.showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Notifications are still blocked. Please allow StudyMate in your phone settings.',
+          ),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    final bool exactAlarmGranted = await _ensureExactAlarmPermission();
+    if (!exactAlarmGranted) {
+      return;
+    }
+
     final DateTime when = DateTime.now().add(const Duration(minutes: 1));
 
-    await AlarmService.instance.scheduleAlarm(
+    final bool scheduled = await AlarmService.instance.scheduleAlarm(
       id: 9998,
       dateTime: when,
       title: 'StudyMate Test Alarm',
@@ -477,10 +573,57 @@ class _StudyMateAppState extends State<StudyMateApp>
     _messengerKey.currentState?.showSnackBar(
       SnackBar(
         content: Text(
-          'Test alarm scheduled for ${DateFormat('hh:mm a').format(when)}.',
+          scheduled
+              ? 'Test alarm scheduled for ${DateFormat('hh:mm a').format(when)}.'
+              : 'Android did not accept the test alarm. Check Alarms & reminders permission.',
         ),
         behavior: SnackBarBehavior.floating,
       ),
+    );
+  }
+
+  Future<void> _showAlarmDiagnostics() async {
+    final bool exactAlarmGranted = await _notificationService
+        .checkExactAlarmPermission();
+    final List<dynamic> alarms = await AlarmService.instance
+        .getScheduledAlarms();
+    final String nextWakeUpAlarm = _nextClassAlarmLabel();
+
+    if (!mounted) {
+      return;
+    }
+
+    final StringBuffer details = StringBuffer()
+      ..writeln(
+        'Exact alarm permission: ${exactAlarmGranted ? 'granted' : 'blocked'}',
+      )
+      ..writeln('Wake-up setting: $nextWakeUpAlarm')
+      ..writeln('Scheduled native alarms: ${alarms.length}');
+
+    if (alarms.isNotEmpty) {
+      details.writeln();
+      details.writeln('Next alarms:');
+      for (final dynamic alarm in alarms.take(5)) {
+        details.writeln(
+          '- ID ${alarm.id}: ${DateFormat('MMM d, hh:mm a').format(alarm.dateTime)}',
+        );
+      }
+    }
+
+    await showDialog<void>(
+      context: _navigatorKey.currentContext!,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Wake-up Diagnostics'),
+          content: SingleChildScrollView(child: Text(details.toString())),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Close'),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -491,9 +634,11 @@ class _StudyMateAppState extends State<StudyMateApp>
         .requestNotificationsPermission();
 
     // Step 2: Request SCHEDULE_EXACT_ALARM (opens system settings)
-    await _notificationService.requestExactAlarmPermission();
+    final bool exactAlarmGranted = await _ensureExactAlarmPermission(
+      rescheduleIfGranted: false,
+    );
 
-    if (notifGranted) {
+    if (notifGranted && exactAlarmGranted) {
       final SharedPreferences prefs = await SharedPreferences.getInstance();
       await prefs.setBool(_notificationPermissionPromptedKey, true);
       await _refreshNotifications();
@@ -502,7 +647,7 @@ class _StudyMateAppState extends State<StudyMateApp>
     _messengerKey.currentState?.showSnackBar(
       SnackBar(
         content: Text(
-          notifGranted
+          notifGranted && exactAlarmGranted
               ? 'Notifications & alarms re-enabled. Reminders were scheduled again.'
               : 'Please allow notifications AND alarms for StudyMate in your phone settings.',
         ),
@@ -594,11 +739,16 @@ class _StudyMateAppState extends State<StudyMateApp>
     await _refreshNotifications();
 
     if (dailyReminder != null || classAlarmTime != null) {
+      final String nextWakeUpAlarm = _nextClassAlarmLabel();
+      final String message = switch (nextWakeUpAlarm) {
+        'Disabled' => 'Wake-up alarm is disabled.',
+        'No class day found in the next 14 days' =>
+          'No wake-up alarm scheduled. Add a class day first, then set the wake-up time again.',
+        _ => 'Next wake-up alarm: $nextWakeUpAlarm',
+      };
+
       _messengerKey.currentState?.showSnackBar(
-        SnackBar(
-          content: Text('Next wake-up alarm: ${_nextClassAlarmLabel()}'),
-          behavior: SnackBarBehavior.floating,
-        ),
+        SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
       );
     }
   }
@@ -684,6 +834,10 @@ class _StudyMateAppState extends State<StudyMateApp>
   /// Clears both app settings data and database entries after user confirmation.
   Future<void> _clearAllData() async {
     final SharedPreferences prefs = await SharedPreferences.getInstance();
+    await _notificationService.cancelTrackedNotifications(
+      assignments: _assignments,
+      exams: _exams,
+    );
     await _databaseService.clearAllData();
     await _notificationService.cancelAllNotifications();
     await _notificationService.clearDeliveredReminderState();
@@ -782,8 +936,7 @@ class _StudyMateAppState extends State<StudyMateApp>
   }
 
   String _nextClassAlarmLabel({TimeOfDay? alarmTime, bool? dailyReminder}) {
-    final bool isDailyReminderEnabled =
-        dailyReminder ?? _dailyReminderEnabled;
+    final bool isDailyReminderEnabled = dailyReminder ?? _dailyReminderEnabled;
     final TimeOfDay targetAlarmTime = alarmTime ?? _classAlarmTime;
 
     if (!isDailyReminderEnabled) {
@@ -847,10 +1000,11 @@ class _StudyMateAppState extends State<StudyMateApp>
               : const Color(0xFFE8ECE4),
         );
 
-    final TextTheme textTheme = GoogleFonts.interTextTheme().apply(
-      bodyColor: colorScheme.onSurface,
-      displayColor: colorScheme.onSurface,
-    );
+    final TextTheme textTheme = ThemeData(brightness: brightness).textTheme
+        .apply(
+          bodyColor: colorScheme.onSurface,
+          displayColor: colorScheme.onSurface,
+        );
 
     return ThemeData(
       useMaterial3: true,
@@ -864,7 +1018,7 @@ class _StudyMateAppState extends State<StudyMateApp>
         backgroundColor: Colors.transparent,
         elevation: 0,
         centerTitle: false,
-        titleTextStyle: GoogleFonts.inter(
+        titleTextStyle: TextStyle(
           fontSize: 24,
           fontWeight: FontWeight.w800,
           color: colorScheme.onSurface,
@@ -901,7 +1055,7 @@ class _StudyMateAppState extends State<StudyMateApp>
           borderRadius: BorderRadius.circular(16),
           borderSide: BorderSide(color: colorScheme.primary, width: 2),
         ),
-        labelStyle: GoogleFonts.inter(fontWeight: FontWeight.w500),
+        labelStyle: TextStyle(fontWeight: FontWeight.w500),
       ),
       bottomNavigationBarTheme: BottomNavigationBarThemeData(
         type: BottomNavigationBarType.fixed,
@@ -917,13 +1071,13 @@ class _StudyMateAppState extends State<StudyMateApp>
         surfaceTintColor: Colors.transparent,
         labelTextStyle: WidgetStateProperty.resolveWith((states) {
           if (states.contains(WidgetState.selected)) {
-            return GoogleFonts.inter(
+            return TextStyle(
               fontSize: 11,
               fontWeight: FontWeight.w700,
               color: colorScheme.primary,
             );
           }
-          return GoogleFonts.inter(
+          return TextStyle(
             fontSize: 11,
             fontWeight: FontWeight.w500,
             color: colorScheme.onSurface.withValues(alpha: 0.45),
@@ -961,6 +1115,9 @@ class _StudyMateAppState extends State<StudyMateApp>
           onToggleDarkMode: _toggleDarkMode,
           onUpdateNotifications: _updateNotificationSettings,
           onClearData: _clearAllData,
+          onShowAlarmDiagnostics: () {
+            _showAlarmDiagnostics();
+          },
           onGrantExactAlarmPermission: () {
             _repairNotifications();
           },
@@ -1064,59 +1221,57 @@ class _StudyMateAppState extends State<StudyMateApp>
       theme: lightTheme,
       darkTheme: darkTheme,
       themeMode: _isDarkMode ? ThemeMode.dark : ThemeMode.light,
-      routes: {
-        '/download': (context) => const AppDownloadScreen(),
-      },
+      routes: {'/download': (context) => const AppDownloadScreen()},
       home: kIsWeb
           ? const AppDownloadScreen()
           : _isLoading
-              ? const _LoadingScreen()
-              : _isFirstOpen
-                  ? OnboardingScreen(onFinish: _saveStudentName)
-                  : MainNavigationShell(
-                  selectedIndex: _selectedIndex,
-                  onSelectTab: (int index) {
-                    setState(() {
-                      _selectedIndex = index;
-                    });
-                  },
-                  onOpenSettings: _openSettings,
-                  onOpenGrades: _openGrades,
-                  screens: <Widget>[
-                    HomeScreen(
-                      studentName: _studentName,
-                      todaySubjects: List<Subject>.from(_subjects),
-                      assignments: _assignments,
-                      quote: _quoteForToday(),
-                      onAddClass: _quickAddClass,
-                      onAddTask: _quickAddTask,
-                      onAddExam: _quickAddExam,
-                      onAddGrade: _quickAddGrade,
-                    ),
-                    ScheduleScreen(
-                      subjects: _subjects,
-                      onAddSubject: _createSubject,
-                      onUpdateSubject: _updateSubject,
-                      onDeleteSubject: _deleteSubject,
-                    ),
-                    AssignmentScreen(
-                      assignments: _assignments,
-                      subjects: _subjects,
-                      onAddAssignment: _createAssignment,
-                      onUpdateAssignment: _updateAssignment,
-                      onToggleStatus: _toggleAssignmentStatus,
-                      onDeleteAssignment: _deleteAssignment,
-                    ),
-                    ExamsScreen(
-                      exams: _exams,
-                      subjects: _subjects,
-                      onAddExam: _createExam,
-                      onUpdateExam: _updateExam,
-                      onDeleteExam: _deleteExam,
-                    ),
-                    const FocusTimerScreen(),
-                  ],
+          ? const _LoadingScreen()
+          : _isFirstOpen
+          ? OnboardingScreen(onFinish: _saveStudentName)
+          : MainNavigationShell(
+              selectedIndex: _selectedIndex,
+              onSelectTab: (int index) {
+                setState(() {
+                  _selectedIndex = index;
+                });
+              },
+              onOpenSettings: _openSettings,
+              onOpenGrades: _openGrades,
+              screens: <Widget>[
+                HomeScreen(
+                  studentName: _studentName,
+                  todaySubjects: List<Subject>.from(_subjects),
+                  assignments: _assignments,
+                  quote: _quoteForToday(),
+                  onAddClass: _quickAddClass,
+                  onAddTask: _quickAddTask,
+                  onAddExam: _quickAddExam,
+                  onAddGrade: _quickAddGrade,
                 ),
+                ScheduleScreen(
+                  subjects: _subjects,
+                  onAddSubject: _createSubject,
+                  onUpdateSubject: _updateSubject,
+                  onDeleteSubject: _deleteSubject,
+                ),
+                AssignmentScreen(
+                  assignments: _assignments,
+                  subjects: _subjects,
+                  onAddAssignment: _createAssignment,
+                  onUpdateAssignment: _updateAssignment,
+                  onToggleStatus: _toggleAssignmentStatus,
+                  onDeleteAssignment: _deleteAssignment,
+                ),
+                ExamsScreen(
+                  exams: _exams,
+                  subjects: _subjects,
+                  onAddExam: _createExam,
+                  onUpdateExam: _updateExam,
+                  onDeleteExam: _deleteExam,
+                ),
+                const FocusTimerScreen(),
+              ],
+            ),
     );
   }
 }
@@ -1146,14 +1301,16 @@ class MainNavigationShell extends StatelessWidget {
       backgroundColor: bgColor,
       appBar: AppBar(
         title: Text(
-          selectedIndex == 0 ? 'Dashboard' :
-          selectedIndex == 1 ? 'Class Schedule' :
-          selectedIndex == 2 ? 'My Tasks' :
-          selectedIndex == 3 ? 'Exams' : 'Focus Timer',
-          style: GoogleFonts.inter(
-            fontWeight: FontWeight.w800,
-            fontSize: 22,
-          ),
+          selectedIndex == 0
+              ? 'Dashboard'
+              : selectedIndex == 1
+              ? 'Class Schedule'
+              : selectedIndex == 2
+              ? 'My Tasks'
+              : selectedIndex == 3
+              ? 'Exams'
+              : 'Focus Timer',
+          style: TextStyle(fontWeight: FontWeight.w800, fontSize: 22),
         ),
         centerTitle: false,
         elevation: 0,
@@ -1275,7 +1432,7 @@ class _LoadingScreen extends StatelessWidget {
             const SizedBox(height: 32),
             Text(
               'STUDYMATE',
-              style: GoogleFonts.inter(
+              style: TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w900,
                 letterSpacing: 4,

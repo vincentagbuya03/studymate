@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:lottie/lottie.dart';
 import '../services/alarm_service.dart';
 
@@ -53,7 +52,7 @@ class AlarmRingScreen extends StatelessWidget {
               Text(
                 title,
                 textAlign: TextAlign.center,
-                style: GoogleFonts.inter(
+                style: TextStyle(
                   fontSize: 32,
                   fontWeight: FontWeight.w800,
                   color: Colors.white,
@@ -65,7 +64,7 @@ class AlarmRingScreen extends StatelessWidget {
                 child: Text(
                   body,
                   textAlign: TextAlign.center,
-                  style: GoogleFonts.inter(
+                  style: TextStyle(
                     fontSize: 18,
                     color: Colors.white.withValues(alpha: 0.9),
                   ),
@@ -78,7 +77,7 @@ class AlarmRingScreen extends StatelessWidget {
                   onPressed: () async {
                     await AlarmService.instance.stopAlarm(alarmId);
                     if (context.mounted) {
-                      Navigator.of(context).pop();
+                      Navigator.of(context).pop(true);
                     }
                   },
                   style: ElevatedButton.styleFrom(
@@ -92,10 +91,7 @@ class AlarmRingScreen extends StatelessWidget {
                   ),
                   child: Text(
                     'STOP ALARM',
-                    style: GoogleFonts.inter(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w700,
-                    ),
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
                   ),
                 ),
               ),

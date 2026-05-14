@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import '../widgets/mascot_status_card.dart';
 
 class FocusTimerScreen extends StatefulWidget {
@@ -12,7 +11,8 @@ class FocusTimerScreen extends StatefulWidget {
 
 enum FocusMode { timer, stopwatch }
 
-class _FocusTimerScreenState extends State<FocusTimerScreen> with SingleTickerProviderStateMixin {
+class _FocusTimerScreenState extends State<FocusTimerScreen>
+    with SingleTickerProviderStateMixin {
   FocusMode _currentMode = FocusMode.timer;
   int _timerDurationMinutes = 25;
   int _seconds = 25 * 60;
@@ -57,7 +57,9 @@ class _FocusTimerScreenState extends State<FocusTimerScreen> with SingleTickerPr
         });
       });
       if (_currentMode == FocusMode.timer) {
-        _animationController.reverse(from: _seconds / (_timerDurationMinutes * 60));
+        _animationController.reverse(
+          from: _seconds / (_timerDurationMinutes * 60),
+        );
       } else {
         _animationController.repeat();
       }
@@ -74,7 +76,7 @@ class _FocusTimerScreenState extends State<FocusTimerScreen> with SingleTickerPr
     _isRunning = false;
     _animationController.duration = Duration(seconds: _seconds);
     _animationController.value = 1.0;
-    
+
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(_isWorkMode ? "Time to focus!" : "Take a break!"),
@@ -87,7 +89,9 @@ class _FocusTimerScreenState extends State<FocusTimerScreen> with SingleTickerPr
     _timer?.cancel();
     setState(() {
       _isWorkMode = true;
-      _seconds = _currentMode == FocusMode.timer ? (_timerDurationMinutes * 60) : 0;
+      _seconds = _currentMode == FocusMode.timer
+          ? (_timerDurationMinutes * 60)
+          : 0;
       _isRunning = false;
       _animationController.stop();
       _animationController.value = 1.0;
@@ -120,7 +124,8 @@ class _FocusTimerScreenState extends State<FocusTimerScreen> with SingleTickerPr
         statusMessage = 'You\'ve focused for ${_formatTime(_seconds)} so far!';
       }
     } else {
-      final double progress = _seconds / (_isWorkMode ? (_timerDurationMinutes * 60) : (5 * 60));
+      final double progress =
+          _seconds / (_isWorkMode ? (_timerDurationMinutes * 60) : (5 * 60));
 
       if (!_isWorkMode) {
         mascotImage = 'assets/images/sleeping.png';
@@ -141,7 +146,8 @@ class _FocusTimerScreenState extends State<FocusTimerScreen> with SingleTickerPr
       } else if (!_isRunning && _seconds == (_timerDurationMinutes * 60)) {
         mascotImage = 'assets/images/mascot_happy.png';
         statusTitle = 'Ready to Focus?';
-        statusMessage = 'Hit play to start your $_timerDurationMinutes-min session!';
+        statusMessage =
+            'Hit play to start your $_timerDurationMinutes-min session!';
       } else {
         mascotImage = 'assets/images/mascot_icandoit.png';
         statusTitle = 'Paused';
@@ -159,7 +165,9 @@ class _FocusTimerScreenState extends State<FocusTimerScreen> with SingleTickerPr
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final Color activeColor = _isWorkMode ? colorScheme.primary : const Color(0xFF10B981);
+    final Color activeColor = _isWorkMode
+        ? colorScheme.primary
+        : const Color(0xFF10B981);
 
     return Scaffold(
       body: SingleChildScrollView(
@@ -174,15 +182,25 @@ class _FocusTimerScreenState extends State<FocusTimerScreen> with SingleTickerPr
               // Mode Selector
               Container(
                 decoration: BoxDecoration(
-                  color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+                  color: colorScheme.surfaceContainerHighest.withValues(
+                    alpha: 0.3,
+                  ),
                   borderRadius: BorderRadius.circular(16),
                 ),
                 padding: const EdgeInsets.all(4),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    _buildModeButton(FocusMode.timer, Icons.timer_outlined, 'Timer'),
-                    _buildModeButton(FocusMode.stopwatch, Icons.av_timer, 'Stopwatch'),
+                    _buildModeButton(
+                      FocusMode.timer,
+                      Icons.timer_outlined,
+                      'Timer',
+                    ),
+                    _buildModeButton(
+                      FocusMode.stopwatch,
+                      Icons.av_timer,
+                      'Stopwatch',
+                    ),
                   ],
                 ),
               ),
@@ -195,7 +213,10 @@ class _FocusTimerScreenState extends State<FocusTimerScreen> with SingleTickerPr
                     height: 280,
                     child: CircularProgressIndicator(
                       value: _currentMode == FocusMode.timer
-                          ? _seconds / (_isWorkMode ? (_timerDurationMinutes * 60) : (5 * 60))
+                          ? _seconds /
+                                (_isWorkMode
+                                    ? (_timerDurationMinutes * 60)
+                                    : (5 * 60))
                           : null, // Indeterminate for stopwatch
                       strokeWidth: 12,
                       backgroundColor: activeColor.withValues(alpha: 0.1),
@@ -208,17 +229,17 @@ class _FocusTimerScreenState extends State<FocusTimerScreen> with SingleTickerPr
                     children: [
                       Text(
                         _formatTime(_seconds),
-                        style: GoogleFonts.inter(
+                        style: TextStyle(
                           fontSize: 64,
                           fontWeight: FontWeight.w900,
                           color: colorScheme.onSurface,
                         ),
                       ),
                       Text(
-                        _currentMode == FocusMode.stopwatch 
+                        _currentMode == FocusMode.stopwatch
                             ? 'elapsed'
                             : (_isWorkMode ? 'session' : 'break'),
-                        style: GoogleFonts.inter(
+                        style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w500,
                           color: colorScheme.onSurface.withValues(alpha: 0.5),
@@ -229,10 +250,12 @@ class _FocusTimerScreenState extends State<FocusTimerScreen> with SingleTickerPr
                 ],
               ),
               const SizedBox(height: 32),
-              if (_currentMode == FocusMode.timer && !_isRunning && _isWorkMode) ...[
+              if (_currentMode == FocusMode.timer &&
+                  !_isRunning &&
+                  _isWorkMode) ...[
                 Text(
                   'Duration: $_timerDurationMinutes mins',
-                  style: GoogleFonts.inter(fontWeight: FontWeight.w700),
+                  style: TextStyle(fontWeight: FontWeight.w700),
                 ),
                 Slider(
                   value: _timerDurationMinutes.toDouble(),
@@ -264,10 +287,20 @@ class _FocusTimerScreenState extends State<FocusTimerScreen> with SingleTickerPr
                     onPressed: _toggleTimer,
                     style: FilledButton.styleFrom(
                       backgroundColor: activeColor,
-                      padding: const EdgeInsets.symmetric(horizontal: 48, vertical: 20),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 48,
+                        vertical: 20,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(24),
+                      ),
                     ),
-                    child: Icon(_isRunning ? Icons.pause_rounded : Icons.play_arrow_rounded, size: 36),
+                    child: Icon(
+                      _isRunning
+                          ? Icons.pause_rounded
+                          : Icons.play_arrow_rounded,
+                      size: 36,
+                    ),
                   ),
                 ],
               ),
@@ -275,7 +308,7 @@ class _FocusTimerScreenState extends State<FocusTimerScreen> with SingleTickerPr
               Text(
                 'Focus sessions help you study better.\nKeep going, Isko is here!',
                 textAlign: TextAlign.center,
-                style: GoogleFonts.inter(
+                style: TextStyle(
                   fontSize: 14,
                   color: colorScheme.onSurface.withValues(alpha: 0.4),
                   height: 1.5,
@@ -291,7 +324,7 @@ class _FocusTimerScreenState extends State<FocusTimerScreen> with SingleTickerPr
   Widget _buildModeButton(FocusMode mode, IconData icon, String label) {
     final isSelected = _currentMode == mode;
     final colorScheme = Theme.of(context).colorScheme;
-    
+
     return GestureDetector(
       onTap: () {
         if (_isRunning) return;
@@ -312,15 +345,19 @@ class _FocusTimerScreenState extends State<FocusTimerScreen> with SingleTickerPr
             Icon(
               icon,
               size: 18,
-              color: isSelected ? Colors.white : colorScheme.onSurface.withValues(alpha: 0.5),
+              color: isSelected
+                  ? Colors.white
+                  : colorScheme.onSurface.withValues(alpha: 0.5),
             ),
             const SizedBox(width: 8),
             Text(
               label,
-              style: GoogleFonts.inter(
+              style: TextStyle(
                 fontSize: 13,
                 fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                color: isSelected ? Colors.white : colorScheme.onSurface.withValues(alpha: 0.5),
+                color: isSelected
+                    ? Colors.white
+                    : colorScheme.onSurface.withValues(alpha: 0.5),
               ),
             ),
           ],

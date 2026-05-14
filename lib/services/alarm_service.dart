@@ -13,7 +13,7 @@ class AlarmService {
     await Alarm.init();
   }
 
-  Future<void> scheduleAlarm({
+  Future<bool> scheduleAlarm({
     required int id,
     required DateTime dateTime,
     required String title,
@@ -49,11 +49,21 @@ class AlarmService {
     );
 
     try {
-      await Alarm.set(alarmSettings: alarmSettings);
-      debugPrint('[AlarmService] Alarm scheduled for $dateTime with ID $id');
+      final bool scheduled = await Alarm.set(alarmSettings: alarmSettings);
+      if (scheduled) {
+        debugPrint('[AlarmService] Alarm scheduled for $dateTime with ID $id');
+      } else {
+        debugPrint(
+          '[AlarmService] Alarm $id was not accepted by the platform.',
+        );
+      }
+      return scheduled;
     } catch (e) {
       debugPrint('[AlarmService] ERROR scheduling alarm $id: $e');
-      debugPrint('[AlarmService] This may be caused by missing SCHEDULE_EXACT_ALARM permission in release builds.');
+      debugPrint(
+        '[AlarmService] This may be caused by missing SCHEDULE_EXACT_ALARM permission in release builds.',
+      );
+      return false;
     }
   }
 
@@ -72,6 +82,14 @@ class AlarmService {
 
   Future<bool> isRinging([int? id]) async {
     return await Alarm.isRinging(id);
+  }
+
+  Future<List<AlarmSettings>> getScheduledAlarms() async {
+    final alarms = await Alarm.getAlarms();
+    return alarms.toList()
+      ..sort(
+        (AlarmSettings a, AlarmSettings b) => a.dateTime.compareTo(b.dateTime),
+      );
   }
 
   ValueStream<AlarmSet> get ringingStream => Alarm.ringing;

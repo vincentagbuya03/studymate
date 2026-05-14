@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:lottie/lottie.dart';
 import '../widgets/app_logo.dart';
 
@@ -83,7 +82,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               ),
               title: Text(
                 'Ready to start?',
-                style: GoogleFonts.inter(
+                style: TextStyle(
                   fontWeight: FontWeight.w900,
                   fontSize: 24,
                   color: const Color(0xFF1E293B),
@@ -103,7 +102,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                   const SizedBox(height: 16),
                   Text(
                     'What should we call you?',
-                    style: GoogleFonts.inter(
+                    style: TextStyle(
                       fontSize: 14,
                       color: const Color(0xFF64748B),
                     ),
@@ -112,7 +111,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                   TextField(
                     controller: _nameController,
                     autofocus: true,
-                    style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+                    style: TextStyle(fontWeight: FontWeight.w600),
                     decoration: InputDecoration(
                       hintText: 'Your Name',
                       filled: true,
@@ -149,7 +148,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                     ),
                     child: Text(
                       'Get Started',
-                      style: GoogleFonts.inter(fontWeight: FontWeight.w700),
+                      style: TextStyle(fontWeight: FontWeight.w700),
                     ),
                   ),
                 ),
@@ -216,7 +215,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                       onTap: _showNameDialog,
                       child: Text(
                         'Skip',
-                        style: GoogleFonts.inter(
+                        style: TextStyle(
                           color: Colors.white.withValues(alpha: 0.7),
                           fontWeight: FontWeight.w600,
                           fontSize: 15,
@@ -298,7 +297,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                                 _currentPage == _pages.length - 1
                                     ? 'Get Started'
                                     : 'Next',
-                                style: GoogleFonts.inter(
+                                style: TextStyle(
                                   color: _pages[_currentPage].gradient[0],
                                   fontWeight: FontWeight.w800,
                                   fontSize: 16,
@@ -390,7 +389,7 @@ class _OnboardingContent extends StatelessWidget {
                     Text(
                       data.title,
                       textAlign: TextAlign.center,
-                      style: GoogleFonts.inter(
+                      style: TextStyle(
                         fontSize: 30,
                         fontWeight: FontWeight.w900,
                         color: Colors.white,
@@ -404,7 +403,7 @@ class _OnboardingContent extends StatelessWidget {
                       child: Text(
                         data.description,
                         textAlign: TextAlign.center,
-                        style: GoogleFonts.inter(
+                        style: TextStyle(
                           fontSize: 16,
                           height: 1.6,
                           color: Colors.white.withValues(alpha: 0.85),

@@ -1,6 +1,5 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../services/analytics_service.dart';
 
@@ -132,7 +131,7 @@ class _AppDownloadScreenState extends State<AppDownloadScreen> {
                   const SizedBox(width: 14),
                   Text(
                     'StudyMate',
-                    style: GoogleFonts.inter(
+                    style: TextStyle(
                       fontSize: isMobile ? 18 : 22,
                       fontWeight: FontWeight.w800,
                       color: Colors.white,
@@ -158,7 +157,7 @@ class _AppDownloadScreenState extends State<AppDownloadScreen> {
                   ),
                   child: Text(
                     'Get App Now',
-                    style: GoogleFonts.inter(fontWeight: FontWeight.w700),
+                    style: TextStyle(fontWeight: FontWeight.w700),
                   ),
                 ),
             ],
@@ -239,7 +238,7 @@ class _AppDownloadScreenState extends State<AppDownloadScreen> {
             children: [
               Text(
                 'Unlock Your Full Potential.',
-                style: GoogleFonts.inter(
+                style: TextStyle(
                   fontSize: 56,
                   fontWeight: FontWeight.w900,
                   color: Colors.white,
@@ -250,7 +249,7 @@ class _AppDownloadScreenState extends State<AppDownloadScreen> {
               const SizedBox(height: 24),
               Text(
                 'Join thousands of students who have already transformed their academic life with StudyMate. Offline-first, secure, and built for success.',
-                style: GoogleFonts.inter(
+                style: TextStyle(
                   fontSize: 18,
                   color: const Color(0xFF94A3B8),
                   height: 1.6,
@@ -271,7 +270,7 @@ class _AppDownloadScreenState extends State<AppDownloadScreen> {
         Text(
           'Unlock Your Potential',
           textAlign: TextAlign.center,
-          style: GoogleFonts.inter(
+          style: TextStyle(
             fontSize: 32, // Reduced from 40
             fontWeight: FontWeight.w900,
             color: Colors.white,
@@ -281,7 +280,7 @@ class _AppDownloadScreenState extends State<AppDownloadScreen> {
         Text(
           'The all-in-one assistant for modern students.',
           textAlign: TextAlign.center,
-          style: GoogleFonts.inter(
+          style: TextStyle(
             fontSize: 14, // Reduced from 16
             color: const Color(0xFF94A3B8),
           ),
@@ -307,7 +306,7 @@ class _AppDownloadScreenState extends State<AppDownloadScreen> {
                 children: [
                   Text(
                     'Scan to Download',
-                    style: GoogleFonts.inter(
+                    style: TextStyle(
                       color: Colors.white70,
                       fontSize: 12,
                       fontWeight: FontWeight.w500,
@@ -334,10 +333,7 @@ class _AppDownloadScreenState extends State<AppDownloadScreen> {
                 icon: const Icon(Icons.download, size: 24),
                 label: Text(
                   'Download APK Free',
-                  style: GoogleFonts.inter(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                 ),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF6366F1),
@@ -361,10 +357,7 @@ class _AppDownloadScreenState extends State<AppDownloadScreen> {
             icon: const Icon(Icons.download, size: 24),
             label: Text(
               'Download APK Free',
-              style: GoogleFonts.inter(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFF6366F1),
@@ -399,7 +392,7 @@ class _AppDownloadScreenState extends State<AppDownloadScreen> {
       children: [
         Text(
           value,
-          style: GoogleFonts.inter(
+          style: TextStyle(
             fontSize: 22,
             fontWeight: FontWeight.w800,
             color: Colors.white,
@@ -407,7 +400,7 @@ class _AppDownloadScreenState extends State<AppDownloadScreen> {
         ),
         Text(
           label,
-          style: GoogleFonts.inter(
+          style: TextStyle(
             fontSize: 13,
             color: const Color(0xFF64748B),
             fontWeight: FontWeight.w500,
@@ -432,7 +425,7 @@ class _AppDownloadScreenState extends State<AppDownloadScreen> {
             children: [
               Text(
                 'Built for Excellence',
-                style: GoogleFonts.inter(
+                style: TextStyle(
                   fontSize: isMobile ? 32 : 44,
                   fontWeight: FontWeight.w900,
                   color: Colors.white,
@@ -500,7 +493,7 @@ class _AppDownloadScreenState extends State<AppDownloadScreen> {
           const SizedBox(height: 24),
           Text(
             title,
-            style: GoogleFonts.inter(
+            style: TextStyle(
               fontSize: 20,
               fontWeight: FontWeight.bold,
               color: Colors.white,
@@ -509,7 +502,7 @@ class _AppDownloadScreenState extends State<AppDownloadScreen> {
           const SizedBox(height: 12),
           Text(
             desc,
-            style: GoogleFonts.inter(
+            style: TextStyle(
               fontSize: 15,
               color: const Color(0xFF94A3B8),
               height: 1.5,
@@ -531,7 +524,7 @@ class _AppDownloadScreenState extends State<AppDownloadScreen> {
           const SizedBox(height: 24),
           Text(
             'Step into the future of learning.',
-            style: GoogleFonts.inter(
+            style: TextStyle(
               fontSize: 20,
               color: Colors.white,
               fontWeight: FontWeight.w600,
@@ -542,7 +535,7 @@ class _AppDownloadScreenState extends State<AppDownloadScreen> {
           const SizedBox(height: 48),
           Text(
             '© ${DateTime.now().year} StudyMate. All rights reserved.',
-            style: GoogleFonts.inter(color: Colors.white24, fontSize: 13),
+            style: TextStyle(color: Colors.white24, fontSize: 13),
           ),
         ],
       ),

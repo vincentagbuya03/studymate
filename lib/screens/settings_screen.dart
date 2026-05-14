@@ -2,7 +2,6 @@ import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
@@ -25,6 +24,7 @@ class SettingsScreen extends StatefulWidget {
     required this.onClearData,
     required this.onTestNotification,
     required this.onTestAlarm,
+    required this.onShowAlarmDiagnostics,
     required this.onGrantExactAlarmPermission,
   });
 
@@ -37,7 +37,7 @@ class SettingsScreen extends StatefulWidget {
   final TimeOfDay classAlarmTime;
   final String nextClassAlarmLabel;
   final String Function({TimeOfDay? alarmTime, bool? dailyReminder})
-      buildNextClassAlarmLabel;
+  buildNextClassAlarmLabel;
   final String alarmSoundPath;
   final Future<void> Function(String name) onSaveName;
   final Future<void> Function(bool value) onToggleDarkMode;
@@ -53,6 +53,7 @@ class SettingsScreen extends StatefulWidget {
   final Future<void> Function() onClearData;
   final VoidCallback onTestNotification;
   final VoidCallback onTestAlarm;
+  final VoidCallback onShowAlarmDiagnostics;
   final VoidCallback onGrantExactAlarmPermission;
 
   @override
@@ -140,7 +141,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         return AlertDialog(
           title: Text(
             'Destructive Action',
-            style: GoogleFonts.inter(
+            style: TextStyle(
               fontWeight: FontWeight.w800,
               color: Colors.redAccent,
             ),
@@ -180,7 +181,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       appBar: AppBar(
         title: Text(
           'Student Profile',
-          style: GoogleFonts.inter(fontWeight: FontWeight.w800),
+          style: TextStyle(fontWeight: FontWeight.w800),
         ),
         centerTitle: true,
         backgroundColor: Colors.transparent,
@@ -210,7 +211,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       },
                     ),
                   ),
-                  style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+                  style: TextStyle(fontWeight: FontWeight.w600),
                 ),
               ],
             ),
@@ -229,8 +230,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     onChanged: (bool v) {
                       setState(() {
                         _dailyReminderEnabled = v;
-                        _nextClassAlarmLabel =
-                            widget.buildNextClassAlarmLabel(dailyReminder: v);
+                        _nextClassAlarmLabel = widget.buildNextClassAlarmLabel(
+                          dailyReminder: v,
+                        );
                       });
                       widget.onUpdateNotifications(dailyReminder: v);
                     },
@@ -253,8 +255,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       if (picked != null) {
                         setState(() {
                           _classAlarmTime = picked;
-                          _nextClassAlarmLabel =
-                              widget.buildNextClassAlarmLabel(alarmTime: picked);
+                          _nextClassAlarmLabel = widget
+                              .buildNextClassAlarmLabel(alarmTime: picked);
                         });
                         widget.onUpdateNotifications(classAlarmTime: picked);
                       }
@@ -364,6 +366,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 const _CustomDivider(),
                 _ActionTile(
+                  title: 'Wake-up Diagnostics',
+                  subtitle: 'See what Android scheduled',
+                  icon: Icons.rule_folder_rounded,
+                  onTap: widget.onShowAlarmDiagnostics,
+                ),
+                const _CustomDivider(),
+                _ActionTile(
                   title: 'Reset App Data',
                   subtitle: 'Clear all local storage',
                   icon: Icons.delete_forever_rounded,
@@ -389,7 +398,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                   child: Text(
                     'StudyMate Premium v1.2.5',
-                    style: GoogleFonts.inter(
+                    style: TextStyle(
                       fontSize: 12,
                       color: colorScheme.primary,
                       fontWeight: FontWeight.w800,
@@ -399,7 +408,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 const SizedBox(height: 8),
                 Text(
                   'Crafted for Excellence',
-                  style: GoogleFonts.inter(
+                  style: TextStyle(
                     fontSize: 12,
                     color: colorScheme.onSurface.withValues(alpha: 0.3),
                     fontWeight: FontWeight.w500,
@@ -424,7 +433,7 @@ class _SectionTitle extends StatelessWidget {
       padding: const EdgeInsets.only(left: 8, bottom: 12),
       child: Text(
         title,
-        style: GoogleFonts.inter(
+        style: TextStyle(
           fontSize: 12,
           fontWeight: FontWeight.w900,
           color: Theme.of(context).colorScheme.primary,
@@ -485,7 +494,7 @@ class _ProfileHeader extends StatelessWidget {
         const SizedBox(height: 16),
         Text(
           studentName,
-          style: GoogleFonts.inter(fontSize: 24, fontWeight: FontWeight.w800),
+          style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800),
         ),
         const SizedBox(height: 4),
         Row(
@@ -495,7 +504,7 @@ class _ProfileHeader extends StatelessWidget {
             const SizedBox(width: 6),
             Text(
               'Academic Scholar',
-              style: GoogleFonts.inter(
+              style: TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
                 color: colorScheme.onSurface.withValues(alpha: 0.4),
@@ -573,15 +582,12 @@ class _SettingsTile extends StatelessWidget {
             children: [
               Text(
                 title,
-                style: GoogleFonts.inter(
-                  fontWeight: FontWeight.w700,
-                  fontSize: 14,
-                ),
+                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
               ),
               const SizedBox(height: 2),
               Text(
                 subtitle,
-                style: GoogleFonts.inter(
+                style: TextStyle(
                   fontSize: 12,
                   color: Theme.of(
                     context,
@@ -641,7 +647,7 @@ class _ActionTile extends StatelessWidget {
                 children: [
                   Text(
                     title,
-                    style: GoogleFonts.inter(
+                    style: TextStyle(
                       fontWeight: FontWeight.w700,
                       fontSize: 14,
                       color: isDestructive ? Colors.redAccent : null,
@@ -650,7 +656,7 @@ class _ActionTile extends StatelessWidget {
                   const SizedBox(height: 2),
                   Text(
                     subtitle,
-                    style: GoogleFonts.inter(
+                    style: TextStyle(
                       fontSize: 12,
                       color: Theme.of(
                         context,

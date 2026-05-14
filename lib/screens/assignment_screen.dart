@@ -1,8 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
-import 'package:intl/intl.dart';
 
 import '../models/assignment.dart';
 import '../models/subject.dart';
@@ -151,13 +149,35 @@ class _AssignmentScreenState extends State<AssignmentScreen> {
     final List<Assignment> filtered = _filteredAssignments();
     final DateTime now = DateTime.now();
     final DateTime today = DateTime(now.year, now.month, now.day);
-    
-    final List<Assignment> todayAssignments = filtered.where((a) => !a.isCompleted && _isSameDate(a.dueDate, today) && !a.dueDate.isBefore(now)).toList();
-    final List<Assignment> overdueAssignments = filtered.where((a) => !a.isCompleted && a.dueDate.isBefore(now)).toList();
-    final List<Assignment> upcomingAssignments = filtered.where((a) => !a.isCompleted && a.dueDate.isAfter(now) && !_isSameDate(a.dueDate, today)).toList();
-    final List<Assignment> completedAssignments = filtered.where((a) => a.isCompleted).toList();
 
-    final List<String> subjectOptions = <String>{'All', ...widget.subjects.map((s) => s.name), ...widget.assignments.map((a) => a.subject)}.toList();
+    final List<Assignment> todayAssignments = filtered
+        .where(
+          (a) =>
+              !a.isCompleted &&
+              _isSameDate(a.dueDate, today) &&
+              !a.dueDate.isBefore(now),
+        )
+        .toList();
+    final List<Assignment> overdueAssignments = filtered
+        .where((a) => !a.isCompleted && a.dueDate.isBefore(now))
+        .toList();
+    final List<Assignment> upcomingAssignments = filtered
+        .where(
+          (a) =>
+              !a.isCompleted &&
+              a.dueDate.isAfter(now) &&
+              !_isSameDate(a.dueDate, today),
+        )
+        .toList();
+    final List<Assignment> completedAssignments = filtered
+        .where((a) => a.isCompleted)
+        .toList();
+
+    final List<String> subjectOptions = <String>{
+      'All',
+      ...widget.subjects.map((s) => s.name),
+      ...widget.assignments.map((a) => a.subject),
+    }.toList();
 
     return Scaffold(
       floatingActionButton: FloatingActionButton.extended(
@@ -169,9 +189,15 @@ class _AssignmentScreenState extends State<AssignmentScreen> {
         padding: const EdgeInsets.fromLTRB(20, 8, 20, 120),
         children: <Widget>[
           // Dynamic Mascot Status Card
-          _buildMascotCard(filtered, todayAssignments, overdueAssignments, upcomingAssignments, completedAssignments),
+          _buildMascotCard(
+            filtered,
+            todayAssignments,
+            overdueAssignments,
+            upcomingAssignments,
+            completedAssignments,
+          ),
           const SizedBox(height: 24),
-          
+
           // Filters
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
@@ -180,23 +206,35 @@ class _AssignmentScreenState extends State<AssignmentScreen> {
                 _FilterChip(
                   label: 'Subject: $_subjectFilter',
                   onTap: () async {
-                    final String? selected = await _showFilterDialog('Select Subject', subjectOptions, _subjectFilter);
-                    if (selected != null) setState(() => _subjectFilter = selected);
+                    final String? selected = await _showFilterDialog(
+                      'Select Subject',
+                      subjectOptions,
+                      _subjectFilter,
+                    );
+                    if (selected != null) {
+                      setState(() => _subjectFilter = selected);
+                    }
                   },
                 ),
                 const SizedBox(width: 8),
                 _FilterChip(
                   label: 'Priority: $_priorityFilter',
                   onTap: () async {
-                    final String? selected = await _showFilterDialog('Select Priority', ['All', 'Low', 'Medium', 'High'], _priorityFilter);
-                    if (selected != null) setState(() => _priorityFilter = selected);
+                    final String? selected = await _showFilterDialog(
+                      'Select Priority',
+                      ['All', 'Low', 'Medium', 'High'],
+                      _priorityFilter,
+                    );
+                    if (selected != null) {
+                      setState(() => _priorityFilter = selected);
+                    }
                   },
                 ),
               ],
             ),
           ),
           const SizedBox(height: 32),
-          
+
           if (filtered.isEmpty)
             _EmptyTasksState(onAddPressed: _openAssignmentSheet)
           else ...[
@@ -241,19 +279,32 @@ class _AssignmentScreenState extends State<AssignmentScreen> {
     );
   }
 
-  Future<String?> _showFilterDialog(String title, List<String> items, String current) async {
+  Future<String?> _showFilterDialog(
+    String title,
+    List<String> items,
+    String current,
+  ) async {
     return showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text(title, style: GoogleFonts.inter(fontWeight: FontWeight.w800)),
+        title: Text(title, style: TextStyle(fontWeight: FontWeight.w800)),
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
-            children: items.map((item) => ListTile(
-              title: Text(item),
-              trailing: item == current ? Icon(Icons.check_circle_rounded, color: Theme.of(context).colorScheme.primary) : null,
-              onTap: () => Navigator.pop(context, item),
-            )).toList(),
+            children: items
+                .map(
+                  (item) => ListTile(
+                    title: Text(item),
+                    trailing: item == current
+                        ? Icon(
+                            Icons.check_circle_rounded,
+                            color: Theme.of(context).colorScheme.primary,
+                          )
+                        : null,
+                    onTap: () => Navigator.pop(context, item),
+                  ),
+                )
+                .toList(),
           ),
         ),
       ),
@@ -270,9 +321,17 @@ class _FilterChip extends StatelessWidget {
   Widget build(BuildContext context) {
     return ActionChip(
       onPressed: onTap,
-      label: Text(label, style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700)),
-      backgroundColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.05),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide.none),
+      label: Text(
+        label,
+        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+      ),
+      backgroundColor: Theme.of(
+        context,
+      ).colorScheme.primary.withValues(alpha: 0.05),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide.none,
+      ),
       padding: const EdgeInsets.symmetric(horizontal: 4),
     );
   }
@@ -298,22 +357,27 @@ class _AssignmentGroup extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (assignments.isEmpty) return const SizedBox.shrink();
-    
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        Text(title, style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w800)),
-        Text(subtitle, style: GoogleFonts.inter(fontSize: 12, color: Colors.grey)),
+        Text(
+          title,
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+        ),
+        Text(subtitle, style: TextStyle(fontSize: 12, color: Colors.grey)),
         const SizedBox(height: 12),
-        ...assignments.map((assignment) => Padding(
-          padding: const EdgeInsets.only(bottom: 12),
-          child: AssignmentCard(
-            assignment: assignment,
-            onTap: () => onEdit(assignment),
-            onToggleStatus: () => onToggleStatus(assignment),
-            onDelete: () => onDelete(assignment.id!),
+        ...assignments.map(
+          (assignment) => Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: AssignmentCard(
+              assignment: assignment,
+              onTap: () => onEdit(assignment),
+              onToggleStatus: () => onToggleStatus(assignment),
+              onDelete: () => onDelete(assignment.id!),
+            ),
           ),
-        )),
+        ),
       ],
     );
   }
@@ -331,14 +395,17 @@ class _EmptyTasksState extends StatelessWidget {
           const SizedBox(height: 40),
           Image.asset('assets/images/mascot_icandoit.png', height: 160),
           const SizedBox(height: 24),
-          Text('Nothing to do!', style: GoogleFonts.inter(fontSize: 20, fontWeight: FontWeight.w800)),
+          Text(
+            'Nothing to do!',
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+          ),
           const SizedBox(height: 8),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 40),
             child: Text(
               'Your task board is completely empty. Add an assignment to get started!',
               textAlign: TextAlign.center,
-              style: GoogleFonts.inter(color: Colors.grey, height: 1.5),
+              style: TextStyle(color: Colors.grey, height: 1.5),
             ),
           ),
           const SizedBox(height: 32),
@@ -352,5 +419,3 @@ class _EmptyTasksState extends StatelessWidget {
     );
   }
 }
-
-

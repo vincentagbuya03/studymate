@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 
 import '../models/assignment.dart';
@@ -93,7 +92,7 @@ class _HomeScreenState extends State<HomeScreen> {
           const SizedBox(height: 8),
           Text(
             DateFormat('EEEE, MMMM d').format(now).toUpperCase(),
-            style: GoogleFonts.inter(
+            style: TextStyle(
               fontSize: 11,
               fontWeight: FontWeight.w800,
               color: Theme.of(
@@ -105,7 +104,7 @@ class _HomeScreenState extends State<HomeScreen> {
           const SizedBox(height: 6),
           Text(
             'Hello, ${widget.studentName.split(' ').first}!',
-            style: GoogleFonts.inter(
+            style: TextStyle(
               fontSize: 32,
               fontWeight: FontWeight.w800,
               color: Theme.of(context).colorScheme.onSurface,
@@ -121,7 +120,7 @@ class _HomeScreenState extends State<HomeScreen> {
           const SizedBox(height: 32),
           Text(
             'Quick Actions',
-            style: GoogleFonts.inter(
+            style: TextStyle(
               fontSize: 20,
               fontWeight: FontWeight.w800,
               color: Theme.of(context).colorScheme.onSurface,
@@ -130,7 +129,7 @@ class _HomeScreenState extends State<HomeScreen> {
           const SizedBox(height: 4),
           Text(
             'Manage your day with one tap',
-            style: GoogleFonts.inter(
+            style: TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.w500,
               color: Theme.of(
@@ -292,11 +291,11 @@ class _SectionTitle extends StatelessWidget {
       children: [
         Text(
           title,
-          style: GoogleFonts.inter(fontSize: 20, fontWeight: FontWeight.w800),
+          style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
         ),
         Text(
           subtitle,
-          style: GoogleFonts.inter(
+          style: TextStyle(
             fontSize: 14,
             color: Theme.of(
               context,
@@ -337,15 +336,17 @@ class _EmptyState extends StatelessWidget {
           const SizedBox(height: 16),
           Text(
             title,
-            style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w800),
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
           ),
           const SizedBox(height: 4),
           Text(
             message,
             textAlign: TextAlign.center,
-            style: GoogleFonts.inter(
+            style: TextStyle(
               fontSize: 14,
-              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
+              color: Theme.of(
+                context,
+              ).colorScheme.onSurface.withValues(alpha: 0.5),
             ),
           ),
         ],
@@ -393,13 +394,15 @@ class _AssignmentPreviewCard extends StatelessWidget {
                 children: [
                   Text(
                     assignment.title,
-                    style: GoogleFonts.inter(fontWeight: FontWeight.w700),
+                    style: TextStyle(fontWeight: FontWeight.w700),
                   ),
                   Text(
                     assignment.subject,
-                    style: GoogleFonts.inter(
+                    style: TextStyle(
                       fontSize: 12,
-                      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.onSurface.withValues(alpha: 0.5),
                     ),
                   ),
                 ],
@@ -407,7 +410,7 @@ class _AssignmentPreviewCard extends StatelessWidget {
             ),
             Text(
               assignment.dueLabel,
-              style: GoogleFonts.inter(
+              style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w700,
                 color: assignment.priorityColor,
@@ -444,7 +447,7 @@ class _QuoteCard extends StatelessWidget {
           Expanded(
             child: Text(
               quote,
-              style: GoogleFonts.inter(
+              style: TextStyle(
                 fontSize: 14,
                 height: 1.6,
                 fontStyle: FontStyle.italic,
@@ -501,11 +504,7 @@ class _QuickActionsRow extends StatelessWidget {
 }
 
 class _QuickActionItem extends StatelessWidget {
-  const _QuickActionItem({
-    required this.icon,
-    required this.label,
-    this.onTap,
-  });
+  const _QuickActionItem({required this.icon, required this.label, this.onTap});
 
   final IconData icon;
   final String label;
@@ -515,7 +514,7 @@ class _QuickActionItem extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final Color primaryColor = theme.colorScheme.primary;
-    
+
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(20),
@@ -537,7 +536,7 @@ class _QuickActionItem extends StatelessWidget {
           const SizedBox(height: 8),
           Text(
             label,
-            style: GoogleFonts.inter(
+            style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w700,
               color: theme.colorScheme.onSurface.withValues(alpha: 0.6),

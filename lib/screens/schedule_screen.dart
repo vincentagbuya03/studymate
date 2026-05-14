@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:table_calendar/table_calendar.dart';
 
 import '../models/subject.dart';
@@ -68,7 +67,10 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
-          title: Text('Delete subject?', style: GoogleFonts.inter(fontWeight: FontWeight.w800)),
+          title: Text(
+            'Delete subject?',
+            style: TextStyle(fontWeight: FontWeight.w800),
+          ),
           content: Text('Remove ${subject.name} from your weekly schedule?'),
           actions: <Widget>[
             TextButton(
@@ -96,7 +98,9 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     String statusMessage;
 
     final int hour = DateTime.now().hour;
-    final bool isWeekend = _selectedDay.weekday == DateTime.saturday || _selectedDay.weekday == DateTime.sunday;
+    final bool isWeekend =
+        _selectedDay.weekday == DateTime.saturday ||
+        _selectedDay.weekday == DateTime.sunday;
 
     if (selectedSubjects.isEmpty && isWeekend) {
       mascotImage = 'assets/images/sleeping.png';
@@ -109,7 +113,8 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     } else if (selectedSubjects.length >= 5) {
       mascotImage = 'assets/images/mascout_tired.png';
       statusTitle = 'Packed Day!';
-      statusMessage = '${selectedSubjects.length} classes! Stay strong, you got this.';
+      statusMessage =
+          '${selectedSubjects.length} classes! Stay strong, you got this.';
     } else if (selectedSubjects.length >= 3) {
       mascotImage = 'assets/images/mascot_busy.png';
       statusTitle = 'Busy Schedule!';
@@ -121,7 +126,8 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     } else {
       mascotImage = 'assets/images/mascot_happy.png';
       statusTitle = 'Ready to Learn!';
-      statusMessage = '${selectedSubjects.length} class${selectedSubjects.length == 1 ? '' : 'es'} on your agenda.';
+      statusMessage =
+          '${selectedSubjects.length} class${selectedSubjects.length == 1 ? '' : 'es'} on your agenda.';
     }
 
     return MascotStatusCard(
@@ -170,16 +176,28 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
               headerStyle: HeaderStyle(
                 formatButtonVisible: false,
                 titleCentered: true,
-                titleTextStyle: GoogleFonts.inter(fontWeight: FontWeight.w800, fontSize: 16),
-                leftChevronIcon: Icon(Icons.chevron_left_rounded, color: theme.colorScheme.primary),
-                rightChevronIcon: Icon(Icons.chevron_right_rounded, color: theme.colorScheme.primary),
+                titleTextStyle: TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 16,
+                ),
+                leftChevronIcon: Icon(
+                  Icons.chevron_left_rounded,
+                  color: theme.colorScheme.primary,
+                ),
+                rightChevronIcon: Icon(
+                  Icons.chevron_right_rounded,
+                  color: theme.colorScheme.primary,
+                ),
               ),
               calendarStyle: CalendarStyle(
                 todayDecoration: BoxDecoration(
                   color: theme.colorScheme.primary.withValues(alpha: 0.1),
                   shape: BoxShape.circle,
                 ),
-                todayTextStyle: TextStyle(color: theme.colorScheme.primary, fontWeight: FontWeight.bold),
+                todayTextStyle: TextStyle(
+                  color: theme.colorScheme.primary,
+                  fontWeight: FontWeight.bold,
+                ),
                 selectedDecoration: BoxDecoration(
                   color: theme.colorScheme.primary,
                   shape: BoxShape.circle,
@@ -199,11 +217,11 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
             ),
           ),
           const SizedBox(height: 32),
-          
+
           // Dynamic Mascot Status Card
           _buildScheduleMascotCard(selectedSubjects),
           const SizedBox(height: 20),
-          
+
           if (selectedSubjects.isEmpty)
             _EmptyScheduleCard(onAddPressed: _openSubjectSheet)
           else
@@ -232,8 +250,14 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                                 },
                               ),
                               ListTile(
-                                leading: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent),
-                                title: const Text('Delete Subject', style: TextStyle(color: Colors.redAccent)),
+                                leading: const Icon(
+                                  Icons.delete_outline_rounded,
+                                  color: Colors.redAccent,
+                                ),
+                                title: const Text(
+                                  'Delete Subject',
+                                  style: TextStyle(color: Colors.redAccent),
+                                ),
                                 onTap: () {
                                   Navigator.pop(context);
                                   _confirmDelete(subject);
@@ -262,14 +286,16 @@ class _EmptyScheduleCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 40),
       decoration: BoxDecoration(
         color: theme.cardColor,
         borderRadius: BorderRadius.circular(32),
-        border: Border.all(color: theme.colorScheme.primary.withValues(alpha: 0.05)),
+        border: Border.all(
+          color: theme.colorScheme.primary.withValues(alpha: 0.05),
+        ),
       ),
       child: Column(
         children: <Widget>[
@@ -277,16 +303,13 @@ class _EmptyScheduleCard extends StatelessWidget {
           const SizedBox(height: 24),
           Text(
             'Nothing here yet!',
-            style: GoogleFonts.inter(
-              fontSize: 20,
-              fontWeight: FontWeight.w800,
-            ),
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
           ),
           const SizedBox(height: 8),
           Text(
             'Add your subjects and class hours to build your professional weekly schedule.',
             textAlign: TextAlign.center,
-            style: GoogleFonts.inter(
+            style: TextStyle(
               fontSize: 14,
               color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
               height: 1.5,
@@ -303,5 +326,3 @@ class _EmptyScheduleCard extends StatelessWidget {
     );
   }
 }
-
-
