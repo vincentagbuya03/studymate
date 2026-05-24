@@ -1,14 +1,15 @@
 import 'dart:async';
 import 'dart:io' show Platform;
 
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
 
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:sqflite_common_ffi_web/sqflite_ffi_web.dart';
 
-
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 
 import 'package:shared_preferences/shared_preferences.dart';
@@ -17,7 +18,9 @@ import 'models/assignment.dart';
 import 'models/exam.dart';
 import 'models/grade.dart';
 import 'models/subject.dart';
+import 'firebase_options.dart';
 import 'screens/assignment_screen.dart';
+import 'screens/auth_screen.dart';
 import 'screens/exams_screen.dart';
 import 'screens/focus_timer_screen.dart';
 import 'screens/grades_screen.dart';
@@ -25,12 +28,14 @@ import 'screens/home_screen.dart';
 import 'screens/onboarding_screen.dart';
 import 'screens/schedule_screen.dart';
 import 'screens/settings_screen.dart';
-import 'services/database_service.dart';
+import 'services/auth_service.dart';
+import 'services/cloud_planner_service.dart';
 import 'services/notification_service.dart';
 import 'services/alarm_service.dart';
 import 'screens/alarm_ring_screen.dart';
 import 'widgets/app_logo.dart';
 import 'widgets/editor_sheets.dart';
+import 'web/admin_panel_screen.dart';
 import 'web/app_download_screen.dart';
 
 Future<void> main() async {
@@ -43,7 +48,8 @@ Future<void> main() async {
     databaseFactory = databaseFactoryFfi;
   }
 
-  await DatabaseService.instance.initialize();
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  await CloudPlannerService.instance.enableOfflinePersistence();
   await NotificationService.instance.initialize();
   await AlarmService.instance.initialize();
   runApp(const StudyMateApp());
@@ -65,7 +71,7 @@ class _StudyMateAppState extends State<StudyMateApp>
   final GlobalKey<ScaffoldMessengerState> _messengerKey =
       GlobalKey<ScaffoldMessengerState>();
   final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
-  final DatabaseService _databaseService = DatabaseService.instance;
+  final CloudPlannerService _plannerService = CloudPlannerService.instance;
   final NotificationService _notificationService = NotificationService.instance;
 
   List<Subject> _subjects = <Subject>[];
@@ -83,23 +89,166 @@ class _StudyMateAppState extends State<StudyMateApp>
   String _studentName = 'User';
   int _selectedIndex = 0;
   bool _isFirstOpen = false;
+  bool _isAdmin = false;
+  String? _disabledMessage;
+  bool _waitingForExactAlarmPermission = false;
+  bool _notificationRefreshRunning = false;
+  bool _notificationRefreshQueued = false;
   Timer? _foregroundReminderTimer;
+  User? _user;
+  StreamSubscription<User?>? _authSubscription;
+  StreamSubscription<PlannerSnapshot>? _plannerSubscription;
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?
+  _profileSubscription;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _bootstrap();
+    _authSubscription = AuthService.instance.authStateChanges.listen(
+      _handleAuthChanged,
+    );
     _listenToAlarms();
+  }
+
+  Future<void> _handleAuthChanged(User? user) async {
+    _plannerSubscription?.cancel();
+    _profileSubscription?.cancel();
+
+    if (user == null) {
+      _foregroundReminderTimer?.cancel();
+      if (mounted) {
+        setState(() {
+          _user = null;
+          _isAdmin = false;
+          _disabledMessage = null;
+          _isLoading = false;
+          _subjects = <Subject>[];
+          _assignments = <Assignment>[];
+          _exams = <Exam>[];
+          _grades = <Grade>[];
+        });
+      }
+      return;
+    }
+
+    if (mounted) {
+      setState(() {
+        _user = user;
+        _isLoading = true;
+        _disabledMessage = null;
+      });
+    }
+
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    final bool isFirstOpen = prefs.getBool('is_first_open') ?? false;
+
+    try {
+      await AuthService.instance.ensureUserProfile(
+        seedDisplayNameFromEmail: !isFirstOpen,
+      );
+    } catch (e) {
+      debugPrint('[Auth Bootstrap] Profile sync unavailable: $e');
+    }
+
+    try {
+      await _loadAdminClaim(user);
+    } catch (e) {
+      debugPrint('[Auth Bootstrap] Admin claim unavailable offline: $e');
+      _isAdmin = false;
+    }
+
+    await _bootstrap();
+
+    try {
+      _startCloudListeners();
+    } catch (e) {
+      debugPrint('[Auth Bootstrap] Real-time sync unavailable: $e');
+    }
+  }
+
+  Future<void> _loadAdminClaim(User user) async {
+    final IdTokenResult token = await user.getIdTokenResult();
+    _isAdmin = token.claims?['admin'] == true;
+  }
+
+  void _startCloudListeners() {
+    _profileSubscription = _plannerService.watchUserProfile().listen((
+      snapshot,
+    ) async {
+      final data = snapshot.data();
+      if (data == null) {
+        return;
+      }
+      if (data['disabled'] == true) {
+        await _notificationService.cancelTrackedNotifications(
+          assignments: _assignments,
+          exams: _exams,
+        );
+        await AuthService.instance.signOut();
+        if (mounted) {
+          setState(() {
+            _disabledMessage = 'This StudyMate account has been disabled.';
+          });
+        }
+        return;
+      }
+
+      final String? displayName = data['displayName'] as String?;
+      if (displayName != null && displayName.trim().isNotEmpty) {
+        final String trimmedDisplayName = displayName.trim();
+        if (mounted && _studentName != trimmedDisplayName) {
+          setState(() {
+            _studentName = trimmedDisplayName;
+          });
+          if (!_isFirstOpen) {
+            await _refreshNotifications();
+          }
+        }
+      }
+    });
+
+    _plannerSubscription = _plannerService.watchPlanner().listen(
+      (PlannerSnapshot snapshot) async {
+        if (!mounted) {
+          _subjects = snapshot.subjects;
+          _assignments = snapshot.assignments;
+          _exams = snapshot.exams;
+          _grades = snapshot.grades;
+          return;
+        }
+        setState(() {
+          _subjects = snapshot.subjects;
+          _assignments = snapshot.assignments;
+          _exams = snapshot.exams;
+          _grades = snapshot.grades;
+        });
+        await _refreshNotifications();
+      },
+      onError: (Object error) {
+        if (mounted) {
+          setState(() {
+            _disabledMessage = error.toString();
+          });
+        }
+      },
+    );
   }
 
   StreamSubscription? _ringingSubscription;
 
   void _listenToAlarms() {
-    _ringingSubscription = AlarmService.instance.ringingStream.listen((alarmSet) {
+    _ringingSubscription = AlarmService.instance.ringingStream.listen((
+      alarmSet,
+    ) {
       if (!mounted) return;
       for (final settings in alarmSet.alarms) {
-        _showAlarmRingScreen(settings.id, settings.notificationSettings.title, settings.notificationSettings.body);
+        _showAlarmRingScreen(
+          settings.id,
+          settings.dateTime,
+          settings.notificationSettings.title,
+          settings.notificationSettings.body,
+        );
       }
     });
   }
@@ -111,35 +260,52 @@ class _StudyMateAppState extends State<StudyMateApp>
     if (ringing.isNotEmpty) {
       final settings = ringing.first;
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        _showAlarmRingScreen(settings.id, settings.notificationSettings.title, settings.notificationSettings.body);
+        _showAlarmRingScreen(
+          settings.id,
+          settings.dateTime,
+          settings.notificationSettings.title,
+          settings.notificationSettings.body,
+        );
       });
     }
   }
 
   bool _isAlarmScreenShowing = false;
 
-  void _showAlarmRingScreen(int alarmId, String title, String body) {
+  void _showAlarmRingScreen(
+    int alarmId,
+    DateTime alarmDateTime,
+    String title,
+    String body,
+  ) {
     if (!mounted || _isAlarmScreenShowing) return;
     _isAlarmScreenShowing = true;
 
-    _navigatorKey.currentState?.push(
-      MaterialPageRoute(
-        builder: (context) => AlarmRingScreen(
-          alarmId: alarmId,
-          title: title,
-          body: body,
-        ),
-      ),
-    ).then((_) {
-      _isAlarmScreenShowing = false;
-      _refreshNotifications();
-    });
+    _navigatorKey.currentState
+        ?.push<bool>(
+          MaterialPageRoute<bool>(
+            builder: (context) =>
+                AlarmRingScreen(alarmId: alarmId, title: title, body: body),
+          ),
+        )
+        .then((bool? stopped) async {
+          _isAlarmScreenShowing = false;
+          if (stopped == true) {
+            await _notificationService.markDailyReminderHandled(
+              alarmId: alarmId,
+              alarmDateTime: alarmDateTime,
+            );
+          }
+        });
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _foregroundReminderTimer?.cancel();
+    _authSubscription?.cancel();
+    _plannerSubscription?.cancel();
+    _profileSubscription?.cancel();
     _ringingSubscription?.cancel();
     super.dispose();
   }
@@ -150,7 +316,7 @@ class _StudyMateAppState extends State<StudyMateApp>
       _startForegroundReminderWatcher();
       _runForegroundReminderCheck();
       _checkForRingingAlarms();
-      _refreshNotifications();
+      _rescheduleIfExactAlarmPermissionRecovered();
       return;
     }
 
@@ -163,70 +329,115 @@ class _StudyMateAppState extends State<StudyMateApp>
 
   /// Loads local settings, database records, and notification schedules.
   Future<void> _bootstrap() async {
-    await _loadPreferences();
-    await _loadPlannerData();
-    await _notificationService.rescheduleAll(
-      assignments: _assignments,
-      subjects: _subjects,
-      exams: _exams,
-      enableDailyReminder: _dailyReminderEnabled,
-      enableOneDayReminder: _dayBeforeReminderEnabled,
-      enableOneHourReminder: _hourBeforeReminderEnabled,
-      enableExactTimeReminder: _exactTimeReminderEnabled,
-      classAlarmTime: _classAlarmTime,
-      alarmSoundPath: _alarmSoundPath,
-      studentName: _studentName,
-    );
-    if (mounted) {
-      setState(() {
-        _isLoading = false;
-      });
-      _startForegroundReminderWatcher();
-      _runForegroundReminderCheck();
-      _queueNotificationPermissionPrompt();
-      _checkForRingingAlarms();
+    try {
+      await _loadPreferences();
+      await _loadPlannerData();
+      await _notificationService.rescheduleAll(
+        assignments: _assignments,
+        subjects: _subjects,
+        exams: _exams,
+        enableDailyReminder: _dailyReminderEnabled,
+        enableOneDayReminder: _dayBeforeReminderEnabled,
+        enableOneHourReminder: _hourBeforeReminderEnabled,
+        enableExactTimeReminder: _exactTimeReminderEnabled,
+        classAlarmTime: _classAlarmTime,
+        alarmSoundPath: _alarmSoundPath,
+        studentName: _studentName,
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+        _startForegroundReminderWatcher();
+        _runForegroundReminderCheck();
+        _queueNotificationPermissionPrompt();
+        _checkForRingingAlarms();
+      }
     }
   }
 
   Future<void> _loadPreferences() async {
     final SharedPreferences prefs = await SharedPreferences.getInstance();
-    _studentName = prefs.getString('student_name') ?? 'User';
+    await prefs.remove('prompted_rating_session');
+    final String? firebaseDisplayName = _user?.displayName;
+    final bool hasFirebaseDisplayName =
+        firebaseDisplayName?.trim().isNotEmpty == true;
+    _studentName = hasFirebaseDisplayName
+        ? firebaseDisplayName!.trim()
+        : _user?.email?.split('@').first ?? 'User';
     _isDarkMode = prefs.getBool('dark_mode') ?? false;
     _dailyReminderEnabled = prefs.getBool('daily_reminder') ?? true;
     _dayBeforeReminderEnabled = prefs.getBool('day_before_reminder') ?? true;
     _hourBeforeReminderEnabled = prefs.getBool('hour_before_reminder') ?? true;
     _exactTimeReminderEnabled = prefs.getBool('exact_time_reminder') ?? true;
-    _alarmSoundPath = prefs.getString('alarm_sound_path') ?? 'assets/audio/alarm_clock_old.mp3';
+    _alarmSoundPath =
+        prefs.getString('alarm_sound_path') ??
+        'assets/audio/alarm_clock_old.mp3';
     final int? alarmHour = prefs.getInt('class_alarm_hour');
     final int? alarmMinute = prefs.getInt('class_alarm_minute');
     if (alarmHour != null && alarmMinute != null) {
       _classAlarmTime = TimeOfDay(hour: alarmHour, minute: alarmMinute);
     }
-    _isFirstOpen = prefs.getBool('is_first_open') ?? true;
+    _isFirstOpen = prefs.getBool('is_first_open') ?? !hasFirebaseDisplayName;
   }
 
   /// Fetches the latest subjects and assignments from the local database.
   Future<void> _loadPlannerData() async {
-    final List<Subject> subjects = await _databaseService.getSubjects();
-    final List<Assignment> assignments = await _databaseService
-        .getAssignments();
-    final List<Exam> exams = await _databaseService.getExams();
-    final List<Grade> grades = await _databaseService.getGrades();
+    try {
+      final PlannerSnapshot snapshot = await _plannerService.loadPlannerData();
+      final List<Subject> subjects = snapshot.subjects;
+      final List<Assignment> assignments = snapshot.assignments;
+      final List<Exam> exams = snapshot.exams;
+      final List<Grade> grades = snapshot.grades;
 
-    if (!mounted) {
-      _subjects = subjects;
-      _assignments = assignments;
-      _exams = exams;
-      _grades = grades;
-      return;
+      if (!mounted) {
+        _subjects = subjects;
+        _assignments = assignments;
+        _exams = exams;
+        _grades = grades;
+        return;
+      }
+
+      setState(() {
+        _subjects = subjects;
+        _assignments = assignments;
+        _exams = exams;
+        _grades = grades;
+      });
+    } on TimeoutException catch (e) {
+      debugPrint('[Planner Bootstrap] Timed out loading cloud data: $e');
+      if (!mounted) {
+        _subjects = <Subject>[];
+        _assignments = <Assignment>[];
+        _exams = <Exam>[];
+        _grades = <Grade>[];
+        return;
+      }
+
+      setState(() {
+        _subjects = <Subject>[];
+        _assignments = <Assignment>[];
+        _exams = <Exam>[];
+        _grades = <Grade>[];
+      });
+    } catch (e) {
+      debugPrint('[Planner Bootstrap] Cloud data unavailable: $e');
+      if (!mounted) {
+        _subjects = <Subject>[];
+        _assignments = <Assignment>[];
+        _exams = <Exam>[];
+        _grades = <Grade>[];
+        return;
+      }
+
+      setState(() {
+        _subjects = <Subject>[];
+        _assignments = <Assignment>[];
+        _exams = <Exam>[];
+        _grades = <Grade>[];
+      });
     }
-
-    setState(() {
-      _subjects = subjects;
-      _assignments = assignments;
-      _exams = exams;
-      _grades = grades;
-    });
   }
 
   void _replaceSubjectInState(Subject subject) {
@@ -361,7 +572,7 @@ class _StudyMateAppState extends State<StudyMateApp>
   Future<void> _saveStudentName(String name) async {
     final SharedPreferences prefs = await SharedPreferences.getInstance();
     final String sanitized = name.trim().isEmpty ? 'User' : name.trim();
-    await prefs.setString('student_name', sanitized);
+    await AuthService.instance.updateDisplayName(sanitized);
     await prefs.setBool('is_first_open', false);
     setState(() {
       _studentName = sanitized;
@@ -371,7 +582,6 @@ class _StudyMateAppState extends State<StudyMateApp>
     _queueNotificationPermissionPrompt();
   }
 
-  /// Waits until a visible screen is rendered before showing Android's permission dialog.
   void _queueNotificationPermissionPrompt() {
     if (kIsWeb) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -382,17 +592,19 @@ class _StudyMateAppState extends State<StudyMateApp>
     });
   }
 
-  /// Prompts once per app data lifecycle to avoid repeated system dialogs on startup.
-  /// Handles BOTH notification permission AND exact alarm permission.
   Future<void> _requestNotificationPermissionIfNeeded() async {
     final SharedPreferences prefs = await SharedPreferences.getInstance();
     final bool hasPrompted =
         prefs.getBool(_notificationPermissionPromptedKey) ?? false;
 
-    if (hasPrompted || !mounted || _isLoading) {
+    if (!mounted || _isLoading) {
+      return;
+    }
+
+    if (hasPrompted) {
       // Even if we already prompted, always check exact alarm on every launch
       // because the user might have revoked it from system settings.
-      await _ensureExactAlarmPermission();
+      await _ensureExactAlarmPermission(rescheduleIfGranted: true);
       return;
     }
 
@@ -409,15 +621,19 @@ class _StudyMateAppState extends State<StudyMateApp>
     // Step 2: Request SCHEDULE_EXACT_ALARM permission
     // This is separate because on Android 12+ release builds, exact alarm
     // permission is NOT auto-granted (unlike debug builds).
-    await _ensureExactAlarmPermission();
+    final bool exactAlarmGranted = await _ensureExactAlarmPermission(
+      rescheduleIfGranted: false,
+    );
 
     await _refreshNotifications();
 
     _messengerKey.currentState?.showSnackBar(
       SnackBar(
         content: Text(
-          notifGranted
+          notifGranted && exactAlarmGranted
               ? 'Notifications Enabled!'
+              : notifGranted
+              ? 'Notifications enabled, but exact alarms still need Alarms & reminders permission.'
               : 'Notifications are restricted. Please check your phone settings.',
         ),
         behavior: SnackBarBehavior.floating,
@@ -428,9 +644,59 @@ class _StudyMateAppState extends State<StudyMateApp>
   /// Ensures exact alarm permission is granted. On Android 12+ release builds
   /// this permission is NOT automatically granted unlike debug builds.
   /// Opens the system settings page if not granted.
-  Future<void> _ensureExactAlarmPermission() async {
-    if (kIsWeb) return;
-    await _notificationService.requestExactAlarmPermission();
+  Future<bool> _ensureExactAlarmPermission({
+    bool rescheduleIfGranted = false,
+  }) async {
+    if (kIsWeb) return true;
+    final bool alreadyGranted = await _notificationService
+        .checkExactAlarmPermission();
+    if (alreadyGranted) {
+      _waitingForExactAlarmPermission = false;
+      return true;
+    }
+
+    _waitingForExactAlarmPermission = true;
+    final bool granted = await _notificationService
+        .requestExactAlarmPermission();
+    if (granted) {
+      _waitingForExactAlarmPermission = false;
+      if (rescheduleIfGranted) {
+        await _refreshNotifications();
+      }
+      return true;
+    }
+
+    if (!granted) {
+      _messengerKey.currentState?.showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Exact alarms are still blocked. Enable Alarms & reminders for StudyMate in Android settings.',
+          ),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+    return false;
+  }
+
+  Future<void> _rescheduleIfExactAlarmPermissionRecovered() async {
+    if (!_waitingForExactAlarmPermission || !mounted || _isLoading) {
+      return;
+    }
+
+    final bool granted = await _notificationService.checkExactAlarmPermission();
+    if (!granted) {
+      return;
+    }
+
+    _waitingForExactAlarmPermission = false;
+    await _refreshNotifications();
+    _messengerKey.currentState?.showSnackBar(
+      const SnackBar(
+        content: Text('Alarms re-enabled. Reminders were scheduled again.'),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
   }
 
   /// Sends a one-tap test notification after confirming runtime access.
@@ -464,9 +730,28 @@ class _StudyMateAppState extends State<StudyMateApp>
   }
 
   Future<void> _sendTestAlarm() async {
+    final bool notifGranted = await _notificationService
+        .requestNotificationsPermission();
+    if (!notifGranted) {
+      _messengerKey.currentState?.showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Notifications are still blocked. Please allow StudyMate in your phone settings.',
+          ),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    final bool exactAlarmGranted = await _ensureExactAlarmPermission();
+    if (!exactAlarmGranted) {
+      return;
+    }
+
     final DateTime when = DateTime.now().add(const Duration(minutes: 1));
 
-    await AlarmService.instance.scheduleAlarm(
+    final bool scheduled = await AlarmService.instance.scheduleAlarm(
       id: 9998,
       dateTime: when,
       title: 'StudyMate Test Alarm',
@@ -477,10 +762,57 @@ class _StudyMateAppState extends State<StudyMateApp>
     _messengerKey.currentState?.showSnackBar(
       SnackBar(
         content: Text(
-          'Test alarm scheduled for ${DateFormat('hh:mm a').format(when)}.',
+          scheduled
+              ? 'Test alarm scheduled for ${DateFormat('hh:mm a').format(when)}.'
+              : 'Android did not accept the test alarm. Check Alarms & reminders permission.',
         ),
         behavior: SnackBarBehavior.floating,
       ),
+    );
+  }
+
+  Future<void> _showAlarmDiagnostics() async {
+    final bool exactAlarmGranted = await _notificationService
+        .checkExactAlarmPermission();
+    final List<dynamic> alarms = await AlarmService.instance
+        .getScheduledAlarms();
+    final String nextWakeUpAlarm = _nextClassAlarmLabel();
+
+    if (!mounted) {
+      return;
+    }
+
+    final StringBuffer details = StringBuffer()
+      ..writeln(
+        'Exact alarm permission: ${exactAlarmGranted ? 'granted' : 'blocked'}',
+      )
+      ..writeln('Wake-up setting: $nextWakeUpAlarm')
+      ..writeln('Scheduled native alarms: ${alarms.length}');
+
+    if (alarms.isNotEmpty) {
+      details.writeln();
+      details.writeln('Next alarms:');
+      for (final dynamic alarm in alarms.take(5)) {
+        details.writeln(
+          '- ID ${alarm.id}: ${DateFormat('MMM d, hh:mm a').format(alarm.dateTime)}',
+        );
+      }
+    }
+
+    await showDialog<void>(
+      context: _navigatorKey.currentContext!,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Wake-up Diagnostics'),
+          content: SingleChildScrollView(child: Text(details.toString())),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Close'),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -491,9 +823,11 @@ class _StudyMateAppState extends State<StudyMateApp>
         .requestNotificationsPermission();
 
     // Step 2: Request SCHEDULE_EXACT_ALARM (opens system settings)
-    await _notificationService.requestExactAlarmPermission();
+    final bool exactAlarmGranted = await _ensureExactAlarmPermission(
+      rescheduleIfGranted: false,
+    );
 
-    if (notifGranted) {
+    if (notifGranted && exactAlarmGranted) {
       final SharedPreferences prefs = await SharedPreferences.getInstance();
       await prefs.setBool(_notificationPermissionPromptedKey, true);
       await _refreshNotifications();
@@ -502,7 +836,7 @@ class _StudyMateAppState extends State<StudyMateApp>
     _messengerKey.currentState?.showSnackBar(
       SnackBar(
         content: Text(
-          notifGranted
+          notifGranted && exactAlarmGranted
               ? 'Notifications & alarms re-enabled. Reminders were scheduled again.'
               : 'Please allow notifications AND alarms for StudyMate in your phone settings.',
         ),
@@ -594,40 +928,55 @@ class _StudyMateAppState extends State<StudyMateApp>
     await _refreshNotifications();
 
     if (dailyReminder != null || classAlarmTime != null) {
+      final String nextWakeUpAlarm = _nextClassAlarmLabel();
+      final String message = switch (nextWakeUpAlarm) {
+        'Disabled' => 'Wake-up alarm is disabled.',
+        'No class day found in the next 14 days' =>
+          'No wake-up alarm scheduled. Add a class day first, then set the wake-up time again.',
+        _ => 'Next wake-up alarm: $nextWakeUpAlarm',
+      };
+
       _messengerKey.currentState?.showSnackBar(
-        SnackBar(
-          content: Text('Next wake-up alarm: ${_nextClassAlarmLabel()}'),
-          behavior: SnackBarBehavior.floating,
-        ),
+        SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
       );
     }
   }
 
   /// Creates a new subject record, then syncs the UI and reminders.
   Future<void> _createSubject(Subject subject) async {
-    final int id = await _databaseService.insertSubject(subject);
-    _replaceSubjectInState(subject.copyWith(id: id));
+    final Subject created = await _plannerService.upsertSubject(subject);
+    _replaceSubjectInState(created);
     await _refreshNotifications();
   }
 
   /// Applies edits to an existing subject, then syncs related reminders.
   Future<void> _updateSubject(Subject subject) async {
-    await _databaseService.updateSubject(subject);
-    _replaceSubjectInState(subject);
+    final Subject updated = await _plannerService.upsertSubject(subject);
+    _replaceSubjectInState(updated);
     await _refreshNotifications();
   }
 
   /// Deletes a subject and removes any dependent assignment links by name only in the UI layer.
   Future<void> _deleteSubject(int id) async {
-    await _databaseService.deleteSubject(id);
+    Subject? subject;
+    for (final Subject item in _subjects) {
+      if (item.id == id) {
+        subject = item;
+        break;
+      }
+    }
+    if (subject != null) {
+      await _plannerService.deleteSubject(subject);
+    }
     _removeSubjectFromState(id);
     await _refreshNotifications();
   }
 
   /// Creates a new assignment record and schedules its due-date notifications.
   Future<void> _createAssignment(Assignment assignment) async {
-    final int id = await _databaseService.insertAssignment(assignment);
-    final Assignment created = assignment.copyWith(id: id);
+    final Assignment created = await _plannerService.upsertAssignment(
+      assignment,
+    );
     _replaceAssignmentInState(created);
     await _notificationService.scheduleAssignmentReminders(
       assignment: created,
@@ -641,10 +990,12 @@ class _StudyMateAppState extends State<StudyMateApp>
 
   /// Updates an assignment record and reschedules notifications as needed.
   Future<void> _updateAssignment(Assignment assignment) async {
-    await _databaseService.updateAssignment(assignment);
-    _replaceAssignmentInState(assignment);
+    final Assignment updated = await _plannerService.upsertAssignment(
+      assignment,
+    );
+    _replaceAssignmentInState(updated);
     await _notificationService.scheduleAssignmentReminders(
-      assignment: assignment,
+      assignment: updated,
       enableOneDayReminder: _dayBeforeReminderEnabled,
       enableOneHourReminder: _hourBeforeReminderEnabled,
       enableExactTimeReminder: _exactTimeReminderEnabled,
@@ -658,14 +1009,14 @@ class _StudyMateAppState extends State<StudyMateApp>
       isCompleted: !assignment.isCompleted,
       completedAt: !assignment.isCompleted ? DateTime.now() : null,
     );
-    await _databaseService.updateAssignment(updated);
-    if (updated.isCompleted && updated.id != null) {
-      await _notificationService.cancelAssignmentNotifications(updated.id!);
+    final Assignment saved = await _plannerService.upsertAssignment(updated);
+    if (saved.isCompleted && saved.id != null) {
+      await _notificationService.cancelAssignmentNotifications(saved.id!);
     }
-    _replaceAssignmentInState(updated);
-    if (!updated.isCompleted) {
+    _replaceAssignmentInState(saved);
+    if (!saved.isCompleted) {
       await _notificationService.scheduleAssignmentReminders(
-        assignment: updated,
+        assignment: saved,
         enableOneDayReminder: _dayBeforeReminderEnabled,
         enableOneHourReminder: _hourBeforeReminderEnabled,
         enableExactTimeReminder: _exactTimeReminderEnabled,
@@ -676,7 +1027,16 @@ class _StudyMateAppState extends State<StudyMateApp>
 
   /// Removes an assignment from the database and clears its scheduled reminders.
   Future<void> _deleteAssignment(int id) async {
-    await _databaseService.deleteAssignment(id);
+    Assignment? assignment;
+    for (final Assignment item in _assignments) {
+      if (item.id == id) {
+        assignment = item;
+        break;
+      }
+    }
+    if (assignment != null) {
+      await _plannerService.deleteAssignment(assignment);
+    }
     await _notificationService.cancelAssignmentNotifications(id);
     _removeAssignmentFromState(id);
   }
@@ -684,10 +1044,13 @@ class _StudyMateAppState extends State<StudyMateApp>
   /// Clears both app settings data and database entries after user confirmation.
   Future<void> _clearAllData() async {
     final SharedPreferences prefs = await SharedPreferences.getInstance();
-    await _databaseService.clearAllData();
+    await _notificationService.cancelTrackedNotifications(
+      assignments: _assignments,
+      exams: _exams,
+    );
+    await _plannerService.clearPlannerData();
     await _notificationService.cancelAllNotifications();
     await _notificationService.clearDeliveredReminderState();
-    await prefs.remove('student_name');
     await prefs.remove('dark_mode');
     await prefs.remove('daily_reminder');
     await prefs.remove('day_before_reminder');
@@ -713,10 +1076,26 @@ class _StudyMateAppState extends State<StudyMateApp>
     });
   }
 
+  Future<void> _signOut() async {
+    await _notificationService.cancelTrackedNotifications(
+      assignments: _assignments,
+      exams: _exams,
+    );
+    await AuthService.instance.signOut();
+
+    if (!mounted) {
+      return;
+    }
+
+    _navigatorKey.currentState?.pushNamedAndRemoveUntil(
+      '/login',
+      (Route<dynamic> route) => false,
+    );
+  }
+
   // --- Exam Logic ---
   Future<void> _createExam(Exam exam) async {
-    final int id = await _databaseService.insertExam(exam);
-    final Exam created = exam.copyWith(id: id);
+    final Exam created = await _plannerService.upsertExam(exam);
     _replaceExamInState(created);
     await _notificationService.scheduleExamReminders(
       exam: created,
@@ -728,10 +1107,10 @@ class _StudyMateAppState extends State<StudyMateApp>
   }
 
   Future<void> _updateExam(Exam exam) async {
-    await _databaseService.updateExam(exam);
-    _replaceExamInState(exam);
+    final Exam updated = await _plannerService.upsertExam(exam);
+    _replaceExamInState(updated);
     await _notificationService.scheduleExamReminders(
-      exam: exam,
+      exam: updated,
       enableOneDayReminder: _dayBeforeReminderEnabled,
       enableOneHourReminder: _hourBeforeReminderEnabled,
       enableExactTimeReminder: _exactTimeReminderEnabled,
@@ -740,50 +1119,71 @@ class _StudyMateAppState extends State<StudyMateApp>
   }
 
   Future<void> _deleteExam(int id) async {
-    await _databaseService.deleteExam(id);
+    Exam? exam;
+    for (final Exam item in _exams) {
+      if (item.id == id) {
+        exam = item;
+        break;
+      }
+    }
+    if (exam != null) {
+      await _plannerService.deleteExam(exam);
+    }
     await _notificationService.cancelExamNotifications(id);
     _removeExamFromState(id);
   }
 
   // --- Grade Logic ---
   Future<void> _createGrade(Grade grade) async {
-    final int id = await _databaseService.insertGrade(grade);
-    _replaceGradeInState(
-      Grade(
-        id: id,
-        subject: grade.subject,
-        score: grade.score,
-        maxScore: grade.maxScore,
-        category: grade.category,
-        date: grade.date,
-      ),
-    );
+    final Grade created = await _plannerService.upsertGrade(grade);
+    _replaceGradeInState(created);
   }
 
   Future<void> _deleteGrade(int id) async {
-    await _databaseService.deleteGrade(id);
+    Grade? grade;
+    for (final Grade item in _grades) {
+      if (item.id == id) {
+        grade = item;
+        break;
+      }
+    }
+    if (grade != null) {
+      await _plannerService.deleteGrade(grade);
+    }
     _removeGradeFromState(id);
   }
 
   /// Rebuilds all offline reminders based on current data and settings.
-  Future<void> _refreshNotifications() {
-    return _notificationService.rescheduleAll(
-      assignments: _assignments,
-      subjects: _subjects,
-      exams: _exams,
-      enableDailyReminder: _dailyReminderEnabled,
-      enableOneDayReminder: _dayBeforeReminderEnabled,
-      enableOneHourReminder: _hourBeforeReminderEnabled,
-      enableExactTimeReminder: _exactTimeReminderEnabled,
-      classAlarmTime: _classAlarmTime,
-      alarmSoundPath: _alarmSoundPath,
-      studentName: _studentName,
-    );
+  Future<void> _refreshNotifications() async {
+    if (_notificationRefreshRunning) {
+      _notificationRefreshQueued = true;
+      return;
+    }
+
+    _notificationRefreshRunning = true;
+    try {
+      do {
+        _notificationRefreshQueued = false;
+        await _notificationService.rescheduleAll(
+          assignments: List<Assignment>.from(_assignments),
+          subjects: List<Subject>.from(_subjects),
+          exams: List<Exam>.from(_exams),
+          enableDailyReminder: _dailyReminderEnabled,
+          enableOneDayReminder: _dayBeforeReminderEnabled,
+          enableOneHourReminder: _hourBeforeReminderEnabled,
+          enableExactTimeReminder: _exactTimeReminderEnabled,
+          classAlarmTime: _classAlarmTime,
+          alarmSoundPath: _alarmSoundPath,
+          studentName: _studentName,
+        );
+      } while (_notificationRefreshQueued && mounted);
+    } finally {
+      _notificationRefreshRunning = false;
+    }
   }
 
   String _nextClassAlarmLabel({TimeOfDay? alarmTime, bool? dailyReminder}) {
-    final bool isDailyReminderEnabled =
-        dailyReminder ?? _dailyReminderEnabled;
+    final bool isDailyReminderEnabled = dailyReminder ?? _dailyReminderEnabled;
     final TimeOfDay targetAlarmTime = alarmTime ?? _classAlarmTime;
 
     if (!isDailyReminderEnabled) {
@@ -847,10 +1247,11 @@ class _StudyMateAppState extends State<StudyMateApp>
               : const Color(0xFFE8ECE4),
         );
 
-    final TextTheme textTheme = GoogleFonts.interTextTheme().apply(
-      bodyColor: colorScheme.onSurface,
-      displayColor: colorScheme.onSurface,
-    );
+    final TextTheme textTheme = ThemeData(brightness: brightness).textTheme
+        .apply(
+          bodyColor: colorScheme.onSurface,
+          displayColor: colorScheme.onSurface,
+        );
 
     return ThemeData(
       useMaterial3: true,
@@ -864,7 +1265,7 @@ class _StudyMateAppState extends State<StudyMateApp>
         backgroundColor: Colors.transparent,
         elevation: 0,
         centerTitle: false,
-        titleTextStyle: GoogleFonts.inter(
+        titleTextStyle: TextStyle(
           fontSize: 24,
           fontWeight: FontWeight.w800,
           color: colorScheme.onSurface,
@@ -901,7 +1302,7 @@ class _StudyMateAppState extends State<StudyMateApp>
           borderRadius: BorderRadius.circular(16),
           borderSide: BorderSide(color: colorScheme.primary, width: 2),
         ),
-        labelStyle: GoogleFonts.inter(fontWeight: FontWeight.w500),
+        labelStyle: TextStyle(fontWeight: FontWeight.w500),
       ),
       bottomNavigationBarTheme: BottomNavigationBarThemeData(
         type: BottomNavigationBarType.fixed,
@@ -917,13 +1318,13 @@ class _StudyMateAppState extends State<StudyMateApp>
         surfaceTintColor: Colors.transparent,
         labelTextStyle: WidgetStateProperty.resolveWith((states) {
           if (states.contains(WidgetState.selected)) {
-            return GoogleFonts.inter(
+            return TextStyle(
               fontSize: 11,
               fontWeight: FontWeight.w700,
               color: colorScheme.primary,
             );
           }
-          return GoogleFonts.inter(
+          return TextStyle(
             fontSize: 11,
             fontWeight: FontWeight.w500,
             color: colorScheme.onSurface.withValues(alpha: 0.45),
@@ -961,6 +1362,10 @@ class _StudyMateAppState extends State<StudyMateApp>
           onToggleDarkMode: _toggleDarkMode,
           onUpdateNotifications: _updateNotificationSettings,
           onClearData: _clearAllData,
+          onSignOut: _signOut,
+          onShowAlarmDiagnostics: () {
+            _showAlarmDiagnostics();
+          },
           onGrantExactAlarmPermission: () {
             _repairNotifications();
           },
@@ -1051,6 +1456,115 @@ class _StudyMateAppState extends State<StudyMateApp>
     );
   }
 
+  String _currentWebRoute() {
+    if (!kIsWeb) {
+      return '/';
+    }
+
+    final Uri uri = Uri.base;
+    final String fragment = uri.fragment.trim();
+    if (fragment.isNotEmpty) {
+      return fragment.startsWith('/') ? fragment : '/$fragment';
+    }
+
+    final String path = uri.path.trim();
+    if (path.isEmpty) {
+      return '/';
+    }
+
+    return path.startsWith('/') ? path : '/$path';
+  }
+
+  Widget _buildAuthenticatedShell() {
+    if (_isLoading) {
+      return const _LoadingScreen();
+    }
+
+    if (_isFirstOpen) {
+      return OnboardingScreen(onFinish: _saveStudentName);
+    }
+
+    return MainNavigationShell(
+      selectedIndex: _selectedIndex,
+      onSelectTab: (int index) {
+        setState(() {
+          _selectedIndex = index;
+        });
+      },
+      onOpenSettings: _openSettings,
+      onOpenGrades: _openGrades,
+      onOpenAdmin: kIsWeb && _isAdmin
+          ? () => _navigatorKey.currentState?.pushNamed('/admin')
+          : null,
+      screens: <Widget>[
+        HomeScreen(
+          studentName: _studentName,
+          todaySubjects: List<Subject>.from(_subjects),
+          assignments: _assignments,
+          quote: _quoteForToday(),
+          onAddClass: _quickAddClass,
+          onAddTask: _quickAddTask,
+          onAddExam: _quickAddExam,
+          onAddGrade: _quickAddGrade,
+        ),
+        ScheduleScreen(
+          subjects: _subjects,
+          onAddSubject: _createSubject,
+          onUpdateSubject: _updateSubject,
+          onDeleteSubject: _deleteSubject,
+        ),
+        AssignmentScreen(
+          assignments: _assignments,
+          subjects: _subjects,
+          onAddAssignment: _createAssignment,
+          onUpdateAssignment: _updateAssignment,
+          onToggleStatus: _toggleAssignmentStatus,
+          onDeleteAssignment: _deleteAssignment,
+        ),
+        ExamsScreen(
+          exams: _exams,
+          subjects: _subjects,
+          onAddExam: _createExam,
+          onUpdateExam: _updateExam,
+          onDeleteExam: _deleteExam,
+        ),
+        const FocusTimerScreen(),
+      ],
+    );
+  }
+
+  Widget _buildWebHome() {
+    final String route = _currentWebRoute();
+
+    if (route == '/admin' || route == '/admin-login') {
+      if (_user == null) {
+        return const AuthScreen(
+          initialMessage:
+              'Sign in with an admin account to open the admin panel.',
+        );
+      }
+      if (_isLoading) {
+        return const _LoadingScreen();
+      }
+      if (!_isAdmin) {
+        return const _WebAccessDeniedScreen(
+          title: 'Admin Access Required',
+          message: 'This page is only available for admin accounts.',
+        );
+      }
+      return const AdminPanelScreen();
+    }
+
+    if (route == '/app' || route == '/login') {
+      if (_user == null) {
+        return AuthScreen(initialMessage: _disabledMessage);
+      }
+      return _buildAuthenticatedShell();
+    }
+
+    return const AppDownloadScreen();
+  }
+
   @override
   Widget build(BuildContext context) {
     final ThemeData lightTheme = _buildTheme(Brightness.light);
@@ -1064,59 +1578,72 @@ class _StudyMateAppState extends State<StudyMateApp>
       theme: lightTheme,
       darkTheme: darkTheme,
       themeMode: _isDarkMode ? ThemeMode.dark : ThemeMode.light,
-      routes: {
+      routes: <String, WidgetBuilder>{
         '/download': (context) => const AppDownloadScreen(),
+        '/login': (context) => AuthScreen(initialMessage: _disabledMessage),
+        '/app': (context) => _user == null
+            ? AuthScreen(initialMessage: _disabledMessage)
+            : _buildAuthenticatedShell(),
+        '/admin-login': (context) => const AuthScreen(
+          initialMessage:
+              'Sign in with an admin account to open the admin panel.',
+        ),
+        if (kIsWeb) '/admin': (context) => const AdminPanelScreen(),
       },
       home: kIsWeb
-          ? const AppDownloadScreen()
-          : _isLoading
-              ? const _LoadingScreen()
-              : _isFirstOpen
-                  ? OnboardingScreen(onFinish: _saveStudentName)
-                  : MainNavigationShell(
-                  selectedIndex: _selectedIndex,
-                  onSelectTab: (int index) {
-                    setState(() {
-                      _selectedIndex = index;
-                    });
-                  },
-                  onOpenSettings: _openSettings,
-                  onOpenGrades: _openGrades,
-                  screens: <Widget>[
-                    HomeScreen(
-                      studentName: _studentName,
-                      todaySubjects: List<Subject>.from(_subjects),
-                      assignments: _assignments,
-                      quote: _quoteForToday(),
-                      onAddClass: _quickAddClass,
-                      onAddTask: _quickAddTask,
-                      onAddExam: _quickAddExam,
-                      onAddGrade: _quickAddGrade,
-                    ),
-                    ScheduleScreen(
-                      subjects: _subjects,
-                      onAddSubject: _createSubject,
-                      onUpdateSubject: _updateSubject,
-                      onDeleteSubject: _deleteSubject,
-                    ),
-                    AssignmentScreen(
-                      assignments: _assignments,
-                      subjects: _subjects,
-                      onAddAssignment: _createAssignment,
-                      onUpdateAssignment: _updateAssignment,
-                      onToggleStatus: _toggleAssignmentStatus,
-                      onDeleteAssignment: _deleteAssignment,
-                    ),
-                    ExamsScreen(
-                      exams: _exams,
-                      subjects: _subjects,
-                      onAddExam: _createExam,
-                      onUpdateExam: _updateExam,
-                      onDeleteExam: _deleteExam,
-                    ),
-                    const FocusTimerScreen(),
-                  ],
+          ? _buildWebHome()
+          : _user == null
+          ? AuthScreen(initialMessage: _disabledMessage)
+          : _buildAuthenticatedShell(),
+    );
+  }
+}
+
+class _WebAccessDeniedScreen extends StatelessWidget {
+  const _WebAccessDeniedScreen({required this.title, required this.message});
+
+  final String title;
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+
+    return Scaffold(
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 420),
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Icon(
+                  Icons.admin_panel_settings_outlined,
+                  size: 48,
+                  color: theme.colorScheme.primary,
                 ),
+                const SizedBox(height: 16),
+                Text(
+                  title,
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.headlineSmall?.copyWith(
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  message,
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.65),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -1129,6 +1656,7 @@ class MainNavigationShell extends StatelessWidget {
     required this.screens,
     required this.onOpenSettings,
     required this.onOpenGrades,
+    this.onOpenAdmin,
   });
 
   final int selectedIndex;
@@ -1136,6 +1664,7 @@ class MainNavigationShell extends StatelessWidget {
   final List<Widget> screens;
   final VoidCallback onOpenSettings;
   final VoidCallback onOpenGrades;
+  final VoidCallback? onOpenAdmin;
 
   /// Wraps tab changes in a smooth fade-and-slide transition.
   @override
@@ -1146,20 +1675,28 @@ class MainNavigationShell extends StatelessWidget {
       backgroundColor: bgColor,
       appBar: AppBar(
         title: Text(
-          selectedIndex == 0 ? 'Dashboard' :
-          selectedIndex == 1 ? 'Class Schedule' :
-          selectedIndex == 2 ? 'My Tasks' :
-          selectedIndex == 3 ? 'Exams' : 'Focus Timer',
-          style: GoogleFonts.inter(
-            fontWeight: FontWeight.w800,
-            fontSize: 22,
-          ),
+          selectedIndex == 0
+              ? 'Dashboard'
+              : selectedIndex == 1
+              ? 'Class Schedule'
+              : selectedIndex == 2
+              ? 'My Tasks'
+              : selectedIndex == 3
+              ? 'Exams'
+              : 'Focus Timer',
+          style: TextStyle(fontWeight: FontWeight.w800, fontSize: 22),
         ),
         centerTitle: false,
         elevation: 0,
         backgroundColor: Colors.transparent,
         surfaceTintColor: Colors.transparent,
         actions: [
+          if (onOpenAdmin != null)
+            IconButton(
+              icon: const Icon(Icons.admin_panel_settings_outlined),
+              onPressed: onOpenAdmin,
+              tooltip: 'Admin',
+            ),
           IconButton(
             icon: const Icon(Icons.bar_chart_rounded),
             onPressed: onOpenGrades,
@@ -1275,7 +1812,7 @@ class _LoadingScreen extends StatelessWidget {
             const SizedBox(height: 32),
             Text(
               'STUDYMATE',
-              style: GoogleFonts.inter(
+              style: TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w900,
                 letterSpacing: 4,

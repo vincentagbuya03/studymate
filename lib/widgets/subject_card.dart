@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 import '../models/subject.dart';
 
@@ -43,7 +42,7 @@ class SubjectCard extends StatelessWidget {
                   children: <Widget>[
                     Text(
                       subject.name,
-                      style: GoogleFonts.inter(
+                      style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w700,
                         color: Theme.of(context).colorScheme.onSurface,
@@ -55,15 +54,19 @@ class SubjectCard extends StatelessWidget {
                         Icon(
                           Icons.location_on_outlined,
                           size: 14,
-                          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.onSurface.withValues(alpha: 0.5),
                         ),
                         const SizedBox(width: 4),
                         Text(
                           subject.room,
-                          style: GoogleFonts.inter(
+                          style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.w500,
-                            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurface.withValues(alpha: 0.6),
                           ),
                         ),
                       ],
@@ -72,16 +75,22 @@ class SubjectCard extends StatelessWidget {
                     Row(
                       children: [
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
                           decoration: BoxDecoration(
                             color: subject.color.withValues(alpha: 0.1),
                             borderRadius: BorderRadius.circular(6),
                           ),
                           child: Text(
-                            displayDay != null 
-                              ? subject.getSlotsForDay(displayDay!).map((s) => s.timeLabel).join(', ')
-                              : subject.slots.first.timeLabel,
-                            style: GoogleFonts.inter(
+                            displayDay != null
+                                ? subject
+                                      .getSlotsForDay(displayDay!)
+                                      .map((s) => s.timeLabel)
+                                      .join(', ')
+                                : subject.slots.first.timeLabel,
+                            style: TextStyle(
                               fontSize: 12,
                               fontWeight: FontWeight.w600,
                               color: subject.color,
@@ -90,14 +99,19 @@ class SubjectCard extends StatelessWidget {
                         ),
                         const SizedBox(width: 8),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
                           decoration: BoxDecoration(
-                            color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.05),
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.primary.withValues(alpha: 0.05),
                             borderRadius: BorderRadius.circular(6),
                           ),
                           child: Text(
                             '${subject.units} Units',
-                            style: GoogleFonts.inter(
+                            style: TextStyle(
                               fontSize: 10,
                               fontWeight: FontWeight.w700,
                               color: Theme.of(context).colorScheme.primary,
@@ -109,7 +123,9 @@ class SubjectCard extends StatelessWidget {
                           Icon(
                             Icons.sticky_note_2_rounded,
                             size: 14,
-                            color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.4),
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.primary.withValues(alpha: 0.4),
                           ),
                         ],
                       ],

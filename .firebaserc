@@ -1,0 +1,8 @@
+{
+  "projects": {
+    "firebase deploy --only firestore:rules": "studymate-6ee53",
+    "studymate": "studymate-6ee53"
+  },
+  "targets": {},
+  "etags": {}
+}

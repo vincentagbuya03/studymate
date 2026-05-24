@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 import '../models/grade.dart';
 import '../models/subject.dart';
@@ -27,7 +26,7 @@ class GradesScreen extends StatefulWidget {
 class _GradesScreenState extends State<GradesScreen> {
   double get _weightedAverage {
     if (widget.grades.isEmpty) return 0;
-    
+
     double totalWeightedPoints = 0;
     double totalUnits = 0;
 
@@ -35,9 +34,10 @@ class _GradesScreenState extends State<GradesScreen> {
       // Find matching subject to get units
       final subject = widget.subjects.firstWhere(
         (s) => s.name.toLowerCase() == grade.subject.toLowerCase(),
-        orElse: () => Subject(name: '', room: '', slots: [], colorValue: 0, units: 1.0),
+        orElse: () =>
+            Subject(name: '', room: '', slots: [], colorValue: 0, units: 1.0),
       );
-      
+
       totalWeightedPoints += (grade.percentage * subject.units);
       totalUnits += subject.units;
     }
@@ -88,19 +88,23 @@ class _GradesScreenState extends State<GradesScreen> {
     } else if (avg >= 90) {
       mascotImage = 'assets/images/celebrating.png';
       statusTitle = 'Outstanding!';
-      statusMessage = 'You\'re averaging ${avg.toStringAsFixed(1)}%! Keep it up!';
+      statusMessage =
+          'You\'re averaging ${avg.toStringAsFixed(1)}%! Keep it up!';
     } else if (avg >= 80) {
       mascotImage = 'assets/images/mascot_happy.png';
       statusTitle = 'Great Work!';
-      statusMessage = 'Solid ${avg.toStringAsFixed(1)}% average. You\'re doing well!';
+      statusMessage =
+          'Solid ${avg.toStringAsFixed(1)}% average. You\'re doing well!';
     } else if (avg >= 75) {
       mascotImage = 'assets/images/mascot_passed.png';
       statusTitle = 'On Track!';
-      statusMessage = '${avg.toStringAsFixed(1)}% average. A little push goes far!';
+      statusMessage =
+          '${avg.toStringAsFixed(1)}% average. A little push goes far!';
     } else if (avg > 0) {
       mascotImage = 'assets/images/mascot_sad.png';
       statusTitle = 'Keep Going!';
-      statusMessage = '${avg.toStringAsFixed(1)}% needs attention. You can improve!';
+      statusMessage =
+          '${avg.toStringAsFixed(1)}% needs attention. You can improve!';
     } else {
       mascotImage = 'assets/images/thinking.png';
       statusTitle = 'Just Started';
@@ -130,18 +134,23 @@ class _GradesScreenState extends State<GradesScreen> {
           const SizedBox(height: 24),
           _GpaCard(percentage: _weightedAverage, gwa: _gwaLabel),
           const SizedBox(height: 32),
-          Text('Recent Grades', style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w800)),
+          Text(
+            'Recent Grades',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+          ),
           const SizedBox(height: 16),
           if (widget.grades.isEmpty)
             const _EmptyGradesState()
           else
-            ...widget.grades.map((grade) => Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: _GradeItem(
-                grade: grade,
-                onDelete: () => widget.onDeleteGrade(grade.id!),
+            ...widget.grades.map(
+              (grade) => Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: _GradeItem(
+                  grade: grade,
+                  onDelete: () => widget.onDeleteGrade(grade.id!),
+                ),
               ),
-            )),
+            ),
         ],
       ),
     );
@@ -180,17 +189,27 @@ class _GpaCard extends StatelessWidget {
             children: [
               Text(
                 'Weighted Average',
-                style: GoogleFonts.inter(color: Colors.white.withValues(alpha: 0.8), fontWeight: FontWeight.w600),
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.8),
+                  fontWeight: FontWeight.w600,
+                ),
               ),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 4,
+                ),
                 decoration: BoxDecoration(
                   color: Colors.white.withValues(alpha: 0.2),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(
                   'GWA: $gwa',
-                  style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 12),
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 12,
+                  ),
                 ),
               ),
             ],
@@ -198,12 +217,16 @@ class _GpaCard extends StatelessWidget {
           const SizedBox(height: 20),
           Text(
             '${percentage.toStringAsFixed(2)}%',
-            style: GoogleFonts.inter(fontSize: 54, fontWeight: FontWeight.w900, color: Colors.white),
+            style: TextStyle(
+              fontSize: 54,
+              fontWeight: FontWeight.w900,
+              color: Colors.white,
+            ),
           ),
           const SizedBox(height: 12),
           Text(
             percentage >= 75 ? 'Academic Excellence' : 'Keep Studying!',
-            style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w700),
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
           ),
         ],
       ),
@@ -227,15 +250,18 @@ class _GradeItem extends StatelessWidget {
               width: 50,
               height: 50,
               decoration: BoxDecoration(
-                color: (grade.percentage >= 75 ? Colors.green : Colors.orange).withValues(alpha: 0.1),
+                color: (grade.percentage >= 75 ? Colors.green : Colors.orange)
+                    .withValues(alpha: 0.1),
                 shape: BoxShape.circle,
               ),
               child: Center(
                 child: Text(
                   '${grade.percentage.toInt()}',
-                  style: GoogleFonts.inter(
+                  style: TextStyle(
                     fontWeight: FontWeight.w800,
-                    color: grade.percentage >= 75 ? Colors.green : Colors.orange,
+                    color: grade.percentage >= 75
+                        ? Colors.green
+                        : Colors.orange,
                   ),
                 ),
               ),
@@ -245,8 +271,14 @@ class _GradeItem extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(grade.subject, style: GoogleFonts.inter(fontWeight: FontWeight.w700)),
-                  Text(grade.category, style: GoogleFonts.inter(fontSize: 12, color: Colors.grey)),
+                  Text(
+                    grade.subject,
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  Text(
+                    grade.category,
+                    style: TextStyle(fontSize: 12, color: Colors.grey),
+                  ),
                 ],
               ),
             ),
@@ -255,14 +287,18 @@ class _GradeItem extends StatelessWidget {
               children: [
                 Text(
                   '${grade.score}/${grade.maxScore}',
-                  style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+                  style: TextStyle(fontWeight: FontWeight.w600),
                 ),
                 const SizedBox(height: 4),
                 GestureDetector(
                   onTap: onDelete,
                   child: Text(
                     'Remove',
-                    style: GoogleFonts.inter(fontSize: 11, color: Colors.redAccent, fontWeight: FontWeight.w600),
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Colors.redAccent,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
               ],
@@ -274,15 +310,19 @@ class _GradeItem extends StatelessWidget {
   }
 }
 
-
-
 class _EmptyGradesState extends StatelessWidget {
   const _EmptyGradesState();
   @override
   Widget build(BuildContext context) {
-    return Center(child: Padding(
-      padding: const EdgeInsets.symmetric(vertical: 40),
-      child: Text('No grades recorded yet. Start tracking your progress!', textAlign: TextAlign.center, style: GoogleFonts.inter(color: Colors.grey)),
-    ));
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 40),
+        child: Text(
+          'No grades recorded yet. Start tracking your progress!',
+          textAlign: TextAlign.center,
+          style: TextStyle(color: Colors.grey),
+        ),
+      ),
+    );
   }
 }

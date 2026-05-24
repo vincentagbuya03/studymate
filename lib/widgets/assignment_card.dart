@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 import '../models/assignment.dart';
 
@@ -70,14 +69,16 @@ class AssignmentCard extends StatelessWidget {
                     children: <Widget>[
                       Text(
                         assignment.title,
-                        style: GoogleFonts.inter(
+                        style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w700,
                           decoration: assignment.isCompleted
                               ? TextDecoration.lineThrough
                               : null,
                           color: assignment.isCompleted
-                              ? Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.4)
+                              ? Theme.of(
+                                  context,
+                                ).colorScheme.onSurface.withValues(alpha: 0.4)
                               : Theme.of(context).colorScheme.onSurface,
                         ),
                       ),
@@ -87,15 +88,19 @@ class AssignmentCard extends StatelessWidget {
                           Icon(
                             Icons.calendar_today_outlined,
                             size: 14,
-                            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurface.withValues(alpha: 0.5),
                           ),
                           const SizedBox(width: 4),
                           Text(
                             assignment.dueLabel,
-                            style: GoogleFonts.inter(
+                            style: TextStyle(
                               fontSize: 13,
                               fontWeight: FontWeight.w500,
-                              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurface.withValues(alpha: 0.6),
                             ),
                           ),
                         ],

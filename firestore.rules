@@ -1,0 +1,97 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+    function isAdmin() {
+      return signedIn() && request.auth.token.admin == true;
+    }
+    function isSelf(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+    function userDocPath(uid) {
+      return /databases/$(database)/documents/users/$(uid);
+    }
+    function userExists(uid) {
+      return exists(userDocPath(uid));
+    }
+    function userEnabled(uid) {
+      return userExists(uid) &&
+        get(userDocPath(uid)).data.disabled != true;
+    }
+    function userEnabledOrMissing(uid) {
+      return !userExists(uid) || userEnabled(uid);
+    }
+    function validPublicMetrics() {
+      return request.resource.data.keys().hasOnly([
+        'studentCount',
+        'ratingTotal',
+        'ratingCount',
+        'updatedAt'
+      ]) &&
+      request.resource.data.studentCount is int &&
+      request.resource.data.studentCount >= 0 &&
+      request.resource.data.ratingTotal is int &&
+      request.resource.data.ratingTotal >= 0 &&
+      request.resource.data.ratingCount is int &&
+      request.resource.data.ratingCount >= 0 &&
+      request.resource.data.ratingTotal <= request.resource.data.ratingCount * 5;
+    }
+    match /publicMetrics/{metricId} {
+      allow read: if metricId == 'studymate';
+      allow create, update: if metricId == 'studymate' &&
+        signedIn() &&
+        validPublicMetrics();
+      allow delete: if isAdmin();
+    }
+    function validPublicReview(uid) {
+      return request.resource.data.keys().hasOnly([
+        'userId',
+        'displayName',
+        'rating',
+        'comment',
+        'approved',
+        'createdAt',
+        'updatedAt'
+      ]) &&
+      request.resource.data.userId == uid &&
+      request.resource.data.displayName is string &&
+      request.resource.data.displayName.size() > 0 &&
+      request.resource.data.displayName.size() <= 80 &&
+      request.resource.data.rating is int &&
+      request.resource.data.rating >= 1 &&
+      request.resource.data.rating <= 5 &&
+      request.resource.data.comment is string &&
+      request.resource.data.comment.size() >= 8 &&
+      request.resource.data.comment.size() <= 280 &&
+      request.resource.data.approved == true;
+    }
+    match /publicReviews/{uid} {
+      allow read: if true;
+      allow create, update: if isSelf(uid) && validPublicReview(uid);
+      allow delete: if isSelf(uid) || isAdmin();
+    }
+    match /users/{uid} {
+      allow create: if isAdmin() || (
+        isSelf(uid) &&
+        request.resource.data.disabled == false
+      );
+      allow get: if isAdmin() || (isSelf(uid) && userEnabledOrMissing(uid));
+      allow list: if isAdmin() || (isSelf(uid) && userEnabledOrMissing(uid));
+      allow update: if isAdmin() ||
+        (
+          isSelf(uid) &&
+          resource.data.disabled != true &&
+          request.resource.data.disabled == resource.data.disabled &&
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['displayName', 'email', 'lastSeen', 'updatedAt'])
+        );
+      allow delete: if isAdmin();
+      match /{plannerCollection}/{docId} {
+        allow read, write: if isSelf(uid) && userEnabled(uid) &&
+          plannerCollection in ['subjects', 'assignments', 'exams', 'grades'];
+      }
+    }
+  }
+}

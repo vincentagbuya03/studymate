@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 
 import '../models/exam.dart';
@@ -67,14 +66,16 @@ class _ExamsScreenState extends State<ExamsScreen> {
           if (widget.exams.isEmpty)
             const _EmptyExamsState()
           else
-            ...widget.exams.map((exam) => Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: _ExamCard(
-                exam: exam,
-                onTap: () => _openExamSheet(exam),
-                onDelete: () => widget.onDeleteExam(exam.id!),
+            ...widget.exams.map(
+              (exam) => Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: _ExamCard(
+                  exam: exam,
+                  onTap: () => _openExamSheet(exam),
+                  onDelete: () => widget.onDeleteExam(exam.id!),
+                ),
               ),
-            )),
+            ),
         ],
       ),
     );
@@ -82,9 +83,12 @@ class _ExamsScreenState extends State<ExamsScreen> {
 
   Widget _buildExamMascotCard() {
     final DateTime now = DateTime.now();
-    final List<Exam> upcoming = widget.exams.where((e) => e.dateTime.isAfter(now)).toList()
-      ..sort((a, b) => a.dateTime.compareTo(b.dateTime));
-    final List<Exam> past = widget.exams.where((e) => e.dateTime.isBefore(now)).toList();
+    final List<Exam> upcoming =
+        widget.exams.where((e) => e.dateTime.isAfter(now)).toList()
+          ..sort((a, b) => a.dateTime.compareTo(b.dateTime));
+    final List<Exam> past = widget.exams
+        .where((e) => e.dateTime.isBefore(now))
+        .toList();
 
     String mascotImage;
     String statusTitle;
@@ -104,11 +108,13 @@ class _ExamsScreenState extends State<ExamsScreen> {
       } else if (diff.inDays <= 3) {
         mascotImage = 'assets/images/thinking.png';
         statusTitle = 'Study Time!';
-        statusMessage = '${next.title} in ${diff.inDays} day(s). Start reviewing!';
+        statusMessage =
+            '${next.title} in ${diff.inDays} day(s). Start reviewing!';
       } else {
         mascotImage = 'assets/images/mascot_happy.png';
         statusTitle = 'Well Planned!';
-        statusMessage = '${upcoming.length} exam(s) upcoming. You\'re prepared!';
+        statusMessage =
+            '${upcoming.length} exam(s) upcoming. You\'re prepared!';
       }
     } else {
       mascotImage = 'assets/images/celebrating.png';
@@ -125,7 +131,11 @@ class _ExamsScreenState extends State<ExamsScreen> {
 }
 
 class _ExamCard extends StatelessWidget {
-  const _ExamCard({required this.exam, required this.onTap, required this.onDelete});
+  const _ExamCard({
+    required this.exam,
+    required this.onTap,
+    required this.onDelete,
+  });
 
   final Exam exam;
   final VoidCallback onTap;
@@ -148,7 +158,9 @@ class _ExamCard extends StatelessWidget {
                 width: 50,
                 height: 50,
                 decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.primary.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Icon(
@@ -163,7 +175,7 @@ class _ExamCard extends StatelessWidget {
                   children: [
                     Text(
                       exam.title,
-                      style: GoogleFonts.inter(
+                      style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w700,
                       ),
@@ -171,26 +183,42 @@ class _ExamCard extends StatelessWidget {
                     const SizedBox(height: 4),
                     Text(
                       '${exam.subject} • ${exam.room}',
-                      style: GoogleFonts.inter(
+                      style: TextStyle(
                         fontSize: 13,
-                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onSurface.withValues(alpha: 0.6),
                       ),
                     ),
                     const SizedBox(height: 8),
                     Row(
                       children: [
-                        Icon(Icons.calendar_today_rounded, size: 14, color: Theme.of(context).colorScheme.primary),
+                        Icon(
+                          Icons.calendar_today_rounded,
+                          size: 14,
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
                         const SizedBox(width: 4),
                         Text(
                           dateStr,
-                          style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600),
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                         const SizedBox(width: 12),
-                        Icon(Icons.access_time_rounded, size: 14, color: Theme.of(context).colorScheme.primary),
+                        Icon(
+                          Icons.access_time_rounded,
+                          size: 14,
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
                         const SizedBox(width: 4),
                         Text(
                           timeStr,
-                          style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600),
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ],
                     ),
@@ -198,7 +226,10 @@ class _ExamCard extends StatelessWidget {
                 ),
               ),
               IconButton(
-                icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent),
+                icon: const Icon(
+                  Icons.delete_outline_rounded,
+                  color: Colors.redAccent,
+                ),
                 onPressed: onDelete,
               ),
             ],
@@ -208,8 +239,6 @@ class _ExamCard extends StatelessWidget {
     );
   }
 }
-
-
 
 class _EmptyExamsState extends StatelessWidget {
   const _EmptyExamsState();
@@ -223,7 +252,7 @@ class _EmptyExamsState extends StatelessWidget {
           const SizedBox(height: 24),
           Text(
             'Clear Skies Ahead',
-            style: GoogleFonts.inter(fontSize: 20, fontWeight: FontWeight.w800),
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
           ),
           const SizedBox(height: 8),
           Padding(
@@ -231,8 +260,10 @@ class _EmptyExamsState extends StatelessWidget {
             child: Text(
               'No upcoming exams found. Track your tests and finals here to stay ahead of the game!',
               textAlign: TextAlign.center,
-              style: GoogleFonts.inter(
-                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
+              style: TextStyle(
+                color: Theme.of(
+                  context,
+                ).colorScheme.onSurface.withValues(alpha: 0.5),
                 height: 1.5,
               ),
             ),

@@ -1,10 +1,13 @@
-import 'dart:io';
-
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import '../services/analytics_service.dart';
+import '../utils/app_error_messages.dart';
+import '../utils/alarm_sound_storage.dart';
+import '../widgets/rate_studymate_dialog.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({
@@ -23,8 +26,10 @@ class SettingsScreen extends StatefulWidget {
     required this.onToggleDarkMode,
     required this.onUpdateNotifications,
     required this.onClearData,
+    required this.onSignOut,
     required this.onTestNotification,
     required this.onTestAlarm,
+    required this.onShowAlarmDiagnostics,
     required this.onGrantExactAlarmPermission,
   });
 
@@ -37,7 +42,7 @@ class SettingsScreen extends StatefulWidget {
   final TimeOfDay classAlarmTime;
   final String nextClassAlarmLabel;
   final String Function({TimeOfDay? alarmTime, bool? dailyReminder})
-      buildNextClassAlarmLabel;
+  buildNextClassAlarmLabel;
   final String alarmSoundPath;
   final Future<void> Function(String name) onSaveName;
   final Future<void> Function(bool value) onToggleDarkMode;
@@ -51,8 +56,10 @@ class SettingsScreen extends StatefulWidget {
   })
   onUpdateNotifications;
   final Future<void> Function() onClearData;
+  final Future<void> Function() onSignOut;
   final VoidCallback onTestNotification;
   final VoidCallback onTestAlarm;
+  final VoidCallback onShowAlarmDiagnostics;
   final VoidCallback onGrantExactAlarmPermission;
 
   @override
@@ -64,6 +71,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late bool _dailyReminderEnabled;
   late TimeOfDay _classAlarmTime;
   late String _nextClassAlarmLabel;
+  AppReview? _myReview;
 
   @override
   void initState() {
@@ -72,6 +80,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _dailyReminderEnabled = widget.dailyReminderEnabled;
     _classAlarmTime = widget.classAlarmTime;
     _nextClassAlarmLabel = widget.nextClassAlarmLabel;
+    _loadMyReview();
   }
 
   @override
@@ -100,18 +109,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _pickAlarmSound() async {
     try {
+      if (kIsWeb) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Custom alarm sounds are mobile only.')),
+        );
+        return;
+      }
       final FilePickerResult? result = await FilePicker.pickFiles(
         type: FileType.audio,
       );
 
       if (result != null && result.files.single.path != null) {
-        final File selectedFile = File(result.files.single.path!);
-        final Directory appDocsDir = await getApplicationDocumentsDirectory();
         final String newFileName =
-            'custom_alarm_${DateTime.now().millisecondsSinceEpoch}${p.extension(selectedFile.path)}';
-        final String newFilePath = p.join(appDocsDir.path, newFileName);
-
-        await selectedFile.copy(newFilePath);
+            'custom_alarm_${DateTime.now().millisecondsSinceEpoch}${p.extension(result.files.single.path!)}';
+        final String newFilePath = await copyAlarmSoundToAppDocs(
+          sourcePath: result.files.single.path!,
+          fileName: newFileName,
+        );
 
         await widget.onUpdateNotifications(alarmSoundPath: newFilePath);
 
@@ -126,9 +140,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
       }
     } catch (e) {
       if (mounted) {
+        debugPrint('Error picking alarm sound: $e');
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('Error picking file: $e')));
+        ).showSnackBar(SnackBar(content: Text(friendlyFilePickerError(e))));
       }
     }
   }
@@ -140,7 +155,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         return AlertDialog(
           title: Text(
             'Destructive Action',
-            style: GoogleFonts.inter(
+            style: TextStyle(
               fontWeight: FontWeight.w800,
               color: Colors.redAccent,
             ),
@@ -171,6 +186,50 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  Future<void> _loadMyReview() async {
+    try {
+      final AppReview? review = await AnalyticsService.instance.getMyReview();
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _myReview = review;
+      });
+    } catch (e) {
+      debugPrint('Could not load student review: $e');
+    }
+  }
+
+  Future<void> _showRateDialog() async {
+    final AppReview? submittedReview = await showRateStudyMateDialog(
+      context: context,
+      studentName: widget.studentName,
+      initialReview: _myReview,
+      barrierDismissible: true,
+    );
+
+    if (submittedReview == null) {
+      return;
+    }
+
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('app_rated_locally', true);
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _myReview = submittedReview;
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Thanks! Your review is now on the download page.'),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -180,7 +239,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       appBar: AppBar(
         title: Text(
           'Student Profile',
-          style: GoogleFonts.inter(fontWeight: FontWeight.w800),
+          style: TextStyle(fontWeight: FontWeight.w800),
         ),
         centerTitle: true,
         backgroundColor: Colors.transparent,
@@ -210,7 +269,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       },
                     ),
                   ),
-                  style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+                  style: TextStyle(fontWeight: FontWeight.w600),
                 ),
               ],
             ),
@@ -229,8 +288,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     onChanged: (bool v) {
                       setState(() {
                         _dailyReminderEnabled = v;
-                        _nextClassAlarmLabel =
-                            widget.buildNextClassAlarmLabel(dailyReminder: v);
+                        _nextClassAlarmLabel = widget.buildNextClassAlarmLabel(
+                          dailyReminder: v,
+                        );
                       });
                       widget.onUpdateNotifications(dailyReminder: v);
                     },
@@ -253,8 +313,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       if (picked != null) {
                         setState(() {
                           _classAlarmTime = picked;
-                          _nextClassAlarmLabel =
-                              widget.buildNextClassAlarmLabel(alarmTime: picked);
+                          _nextClassAlarmLabel = widget
+                              .buildNextClassAlarmLabel(alarmTime: picked);
                         });
                         widget.onUpdateNotifications(classAlarmTime: picked);
                       }
@@ -338,6 +398,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           const SizedBox(height: 24),
 
+          _SectionTitle(title: 'FEEDBACK'),
+          _SectionCard(
+            child: _ActionTile(
+              title: 'Rate StudyMate',
+              subtitle: _myReview == null
+                  ? 'Share a rating and comment'
+                  : '${_myReview!.rating}/5 - Edit your public comment',
+              icon: Icons.star_rounded,
+              onTap: _showRateDialog,
+            ),
+          ),
+          const SizedBox(height: 24),
+
           _SectionTitle(title: 'MAINTENANCE'),
           _SectionCard(
             child: Column(
@@ -361,6 +434,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   subtitle: 'Verify notifications work',
                   icon: Icons.radar_rounded,
                   onTap: widget.onTestNotification,
+                ),
+                const _CustomDivider(),
+                _ActionTile(
+                  title: 'Wake-up Diagnostics',
+                  subtitle: 'See what Android scheduled',
+                  icon: Icons.rule_folder_rounded,
+                  onTap: widget.onShowAlarmDiagnostics,
+                ),
+                const _CustomDivider(),
+                _ActionTile(
+                  title: 'Sign Out',
+                  subtitle: 'Leave this device signed out',
+                  icon: Icons.logout_rounded,
+                  onTap: () {
+                    widget.onSignOut();
+                  },
                 ),
                 const _CustomDivider(),
                 _ActionTile(
@@ -389,7 +478,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                   child: Text(
                     'StudyMate Premium v1.2.5',
-                    style: GoogleFonts.inter(
+                    style: TextStyle(
                       fontSize: 12,
                       color: colorScheme.primary,
                       fontWeight: FontWeight.w800,
@@ -399,7 +488,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 const SizedBox(height: 8),
                 Text(
                   'Crafted for Excellence',
-                  style: GoogleFonts.inter(
+                  style: TextStyle(
                     fontSize: 12,
                     color: colorScheme.onSurface.withValues(alpha: 0.3),
                     fontWeight: FontWeight.w500,
@@ -424,7 +513,7 @@ class _SectionTitle extends StatelessWidget {
       padding: const EdgeInsets.only(left: 8, bottom: 12),
       child: Text(
         title,
-        style: GoogleFonts.inter(
+        style: TextStyle(
           fontSize: 12,
           fontWeight: FontWeight.w900,
           color: Theme.of(context).colorScheme.primary,
@@ -485,7 +574,7 @@ class _ProfileHeader extends StatelessWidget {
         const SizedBox(height: 16),
         Text(
           studentName,
-          style: GoogleFonts.inter(fontSize: 24, fontWeight: FontWeight.w800),
+          style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800),
         ),
         const SizedBox(height: 4),
         Row(
@@ -495,7 +584,7 @@ class _ProfileHeader extends StatelessWidget {
             const SizedBox(width: 6),
             Text(
               'Academic Scholar',
-              style: GoogleFonts.inter(
+              style: TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
                 color: colorScheme.onSurface.withValues(alpha: 0.4),
@@ -573,15 +662,12 @@ class _SettingsTile extends StatelessWidget {
             children: [
               Text(
                 title,
-                style: GoogleFonts.inter(
-                  fontWeight: FontWeight.w700,
-                  fontSize: 14,
-                ),
+                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
               ),
               const SizedBox(height: 2),
               Text(
                 subtitle,
-                style: GoogleFonts.inter(
+                style: TextStyle(
                   fontSize: 12,
                   color: Theme.of(
                     context,
@@ -641,7 +727,7 @@ class _ActionTile extends StatelessWidget {
                 children: [
                   Text(
                     title,
-                    style: GoogleFonts.inter(
+                    style: TextStyle(
                       fontWeight: FontWeight.w700,
                       fontSize: 14,
                       color: isDestructive ? Colors.redAccent : null,
@@ -650,7 +736,7 @@ class _ActionTile extends StatelessWidget {
                   const SizedBox(height: 2),
                   Text(
                     subtitle,
-                    style: GoogleFonts.inter(
+                    style: TextStyle(
                       fontSize: 12,
                       color: Theme.of(
                         context,

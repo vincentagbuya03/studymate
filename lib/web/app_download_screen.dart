@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'dart:ui';
+
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher.dart';
+
 import '../services/analytics_service.dart';
 
 class AppDownloadScreen extends StatefulWidget {
@@ -12,26 +14,68 @@ class AppDownloadScreen extends StatefulWidget {
 }
 
 class _AppDownloadScreenState extends State<AppDownloadScreen> {
-  int _downloadCount = 0;
+  AppPublicMetrics _metrics = AppPublicMetrics.fallback;
+  List<AppReview> _reviews = const <AppReview>[];
   bool _isLoading = true;
+  StreamSubscription<AppPublicMetrics>? _metricsSubscription;
+  StreamSubscription<List<AppReview>>? _reviewsSubscription;
 
   @override
   void initState() {
     super.initState();
-    _loadDownloadCount();
+    _loadMetrics();
+    _metricsSubscription = AnalyticsService.instance
+        .watchPublicMetrics()
+        .listen(
+          (metrics) {
+            if (!mounted) {
+              return;
+            }
+            setState(() {
+              _metrics = metrics;
+              _isLoading = false;
+            });
+          },
+          onError: (Object error) {
+            debugPrint('Could not watch public metrics: $error');
+          },
+        );
+    _reviewsSubscription = AnalyticsService.instance
+        .watchPublicReviews()
+        .listen(
+          (reviews) {
+            if (!mounted) {
+              return;
+            }
+            setState(() {
+              _reviews = reviews;
+            });
+          },
+          onError: (Object error) {
+            debugPrint('Could not watch public reviews: $error');
+          },
+        );
   }
 
-  Future<void> _loadDownloadCount() async {
-    final count = await AnalyticsService.instance.getDownloadCount();
+  @override
+  void dispose() {
+    _metricsSubscription?.cancel();
+    _reviewsSubscription?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _loadMetrics() async {
+    final metrics = await AnalyticsService.instance.getPublicMetrics();
+    if (!mounted) {
+      return;
+    }
     setState(() {
-      _downloadCount = count;
+      _metrics = metrics;
       _isLoading = false;
     });
   }
 
   Future<void> _handleDownload() async {
-    await AnalyticsService.instance.incrementDownloadCount();
-    _loadDownloadCount();
     final Uri url = Uri.parse('/StudyMate.apk');
     if (!await launchUrl(url)) {
       if (mounted) {
@@ -87,6 +131,7 @@ class _AppDownloadScreenState extends State<AppDownloadScreen> {
                   children: [
                     _buildNavBar(isMobile),
                     _buildHeroSection(isMobile),
+                    _buildReviewsSection(isMobile),
                     _buildFeaturesSection(isMobile),
                     _buildFooter(),
                   ],
@@ -132,7 +177,7 @@ class _AppDownloadScreenState extends State<AppDownloadScreen> {
                   const SizedBox(width: 14),
                   Text(
                     'StudyMate',
-                    style: GoogleFonts.inter(
+                    style: TextStyle(
                       fontSize: isMobile ? 18 : 22,
                       fontWeight: FontWeight.w800,
                       color: Colors.white,
@@ -158,7 +203,7 @@ class _AppDownloadScreenState extends State<AppDownloadScreen> {
                   ),
                   child: Text(
                     'Get App Now',
-                    style: GoogleFonts.inter(fontWeight: FontWeight.w700),
+                    style: TextStyle(fontWeight: FontWeight.w700),
                   ),
                 ),
             ],
@@ -239,7 +284,7 @@ class _AppDownloadScreenState extends State<AppDownloadScreen> {
             children: [
               Text(
                 'Unlock Your Full Potential.',
-                style: GoogleFonts.inter(
+                style: TextStyle(
                   fontSize: 56,
                   fontWeight: FontWeight.w900,
                   color: Colors.white,
@@ -250,7 +295,7 @@ class _AppDownloadScreenState extends State<AppDownloadScreen> {
               const SizedBox(height: 24),
               Text(
                 'Join thousands of students who have already transformed their academic life with StudyMate. Offline-first, secure, and built for success.',
-                style: GoogleFonts.inter(
+                style: TextStyle(
                   fontSize: 18,
                   color: const Color(0xFF94A3B8),
                   height: 1.6,
@@ -271,7 +316,7 @@ class _AppDownloadScreenState extends State<AppDownloadScreen> {
         Text(
           'Unlock Your Potential',
           textAlign: TextAlign.center,
-          style: GoogleFonts.inter(
+          style: TextStyle(
             fontSize: 32, // Reduced from 40
             fontWeight: FontWeight.w900,
             color: Colors.white,
@@ -281,7 +326,7 @@ class _AppDownloadScreenState extends State<AppDownloadScreen> {
         Text(
           'The all-in-one assistant for modern students.',
           textAlign: TextAlign.center,
-          style: GoogleFonts.inter(
+          style: TextStyle(
             fontSize: 14, // Reduced from 16
             color: const Color(0xFF94A3B8),
           ),
@@ -307,7 +352,7 @@ class _AppDownloadScreenState extends State<AppDownloadScreen> {
                 children: [
                   Text(
                     'Scan to Download',
-                    style: GoogleFonts.inter(
+                    style: TextStyle(
                       color: Colors.white70,
                       fontSize: 12,
                       fontWeight: FontWeight.w500,
@@ -334,10 +379,7 @@ class _AppDownloadScreenState extends State<AppDownloadScreen> {
                 icon: const Icon(Icons.download, size: 24),
                 label: Text(
                   'Download APK Free',
-                  style: GoogleFonts.inter(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                 ),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF6366F1),
@@ -361,10 +403,7 @@ class _AppDownloadScreenState extends State<AppDownloadScreen> {
             icon: const Icon(Icons.download, size: 24),
             label: Text(
               'Download APK Free',
-              style: GoogleFonts.inter(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFF6366F1),
@@ -381,12 +420,24 @@ class _AppDownloadScreenState extends State<AppDownloadScreen> {
         const SizedBox(height: 40),
         _isLoading
             ? const CircularProgressIndicator()
-            : Row(
-                mainAxisSize: MainAxisSize.min,
+            : Column(
+                crossAxisAlignment: isCenter
+                    ? CrossAxisAlignment.center
+                    : CrossAxisAlignment.start,
                 children: [
-                  _buildMiniStat('$_downloadCount+', 'Students'),
-                  const SizedBox(width: 32),
-                  _buildMiniStat('4.9/5', 'Rating'),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _buildMiniStat('${_metrics.studentCount}+', 'Students'),
+                      const SizedBox(width: 32),
+                      _buildMiniStat(
+                        '${_metrics.ratingAverage.toStringAsFixed(1)}/5',
+                        _metrics.ratingCount == 0
+                            ? 'Rating'
+                            : '${_metrics.ratingCount} ratings',
+                      ),
+                    ],
+                  ),
                 ],
               ),
       ],
@@ -399,7 +450,7 @@ class _AppDownloadScreenState extends State<AppDownloadScreen> {
       children: [
         Text(
           value,
-          style: GoogleFonts.inter(
+          style: TextStyle(
             fontSize: 22,
             fontWeight: FontWeight.w800,
             color: Colors.white,
@@ -407,7 +458,7 @@ class _AppDownloadScreenState extends State<AppDownloadScreen> {
         ),
         Text(
           label,
-          style: GoogleFonts.inter(
+          style: TextStyle(
             fontSize: 13,
             color: const Color(0xFF64748B),
             fontWeight: FontWeight.w500,
@@ -432,7 +483,7 @@ class _AppDownloadScreenState extends State<AppDownloadScreen> {
             children: [
               Text(
                 'Built for Excellence',
-                style: GoogleFonts.inter(
+                style: TextStyle(
                   fontSize: isMobile ? 32 : 44,
                   fontWeight: FontWeight.w900,
                   color: Colors.white,
@@ -472,6 +523,92 @@ class _AppDownloadScreenState extends State<AppDownloadScreen> {
     );
   }
 
+  Widget _buildReviewsSection(bool isMobile) {
+    if (_reviews.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Container(
+      width: double.infinity,
+      color: Colors.black,
+      padding: EdgeInsets.symmetric(
+        horizontal: isMobile ? 24.0 : 48.0,
+        vertical: 80.0,
+      ),
+      child: Center(
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 1200),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Loved by Students',
+                style: TextStyle(
+                  fontSize: isMobile ? 30 : 40,
+                  fontWeight: FontWeight.w900,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(height: 28),
+              Wrap(
+                spacing: 18,
+                runSpacing: 18,
+                children: _reviews.map(_buildReviewCard).toList(),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildReviewCard(AppReview review) {
+    return Container(
+      width: 360,
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.04),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: List.generate(5, (index) {
+              return Icon(
+                index < review.rating
+                    ? Icons.star_rounded
+                    : Icons.star_outline_rounded,
+                color: const Color(0xFFFBBF24),
+                size: 20,
+              );
+            }),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            '"${review.comment}"',
+            style: const TextStyle(
+              color: Color(0xFFE2E8F0),
+              fontSize: 15,
+              height: 1.5,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          const SizedBox(height: 18),
+          Text(
+            review.displayName,
+            style: const TextStyle(
+              color: Color(0xFF94A3B8),
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildGlassFeature({
     required IconData icon,
     required String title,
@@ -500,7 +637,7 @@ class _AppDownloadScreenState extends State<AppDownloadScreen> {
           const SizedBox(height: 24),
           Text(
             title,
-            style: GoogleFonts.inter(
+            style: TextStyle(
               fontSize: 20,
               fontWeight: FontWeight.bold,
               color: Colors.white,
@@ -509,7 +646,7 @@ class _AppDownloadScreenState extends State<AppDownloadScreen> {
           const SizedBox(height: 12),
           Text(
             desc,
-            style: GoogleFonts.inter(
+            style: TextStyle(
               fontSize: 15,
               color: const Color(0xFF94A3B8),
               height: 1.5,
@@ -531,7 +668,7 @@ class _AppDownloadScreenState extends State<AppDownloadScreen> {
           const SizedBox(height: 24),
           Text(
             'Step into the future of learning.',
-            style: GoogleFonts.inter(
+            style: TextStyle(
               fontSize: 20,
               color: Colors.white,
               fontWeight: FontWeight.w600,
@@ -542,7 +679,7 @@ class _AppDownloadScreenState extends State<AppDownloadScreen> {
           const SizedBox(height: 48),
           Text(
             '© ${DateTime.now().year} StudyMate. All rights reserved.',
-            style: GoogleFonts.inter(color: Colors.white24, fontSize: 13),
+            style: TextStyle(color: Colors.white24, fontSize: 13),
           ),
         ],
       ),

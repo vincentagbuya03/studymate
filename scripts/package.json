@@ -1,0 +1,13 @@
+{
+  "name": "studymate-admin-scripts",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Admin helper scripts for StudyMate Firebase",
+  "main": "make_admin.js",
+  "scripts": {
+    "make-admin": "node make_admin.js"
+  },
+  "dependencies": {
+    "firebase-admin": "^13.10.0"
+  }
+}

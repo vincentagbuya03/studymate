@@ -36,6 +36,7 @@ class ScheduleSlot {
 class Subject {
   const Subject({
     this.id,
+    this.remoteId,
     required this.name,
     required this.room,
     required this.slots,
@@ -45,6 +46,7 @@ class Subject {
   });
 
   final int? id;
+  final String? remoteId;
   final String name;
   final String room;
   final List<ScheduleSlot> slots;
@@ -64,6 +66,7 @@ class Subject {
 
   Subject copyWith({
     int? id,
+    String? remoteId,
     String? name,
     String? room,
     List<ScheduleSlot>? slots,
@@ -73,6 +76,7 @@ class Subject {
   }) {
     return Subject(
       id: id ?? this.id,
+      remoteId: remoteId ?? this.remoteId,
       name: name ?? this.name,
       room: room ?? this.room,
       slots: slots ?? this.slots,
@@ -85,6 +89,7 @@ class Subject {
   Map<String, Object?> toMap() {
     return <String, Object?>{
       'id': id,
+      'remoteId': remoteId,
       'name': name,
       'room': room,
       'slots': jsonEncode(slots.map((s) => s.toMap()).toList()),
@@ -98,9 +103,12 @@ class Subject {
     final List<dynamic> slotsJson = jsonDecode(map['slots'] as String);
     return Subject(
       id: map['id'] as int?,
+      remoteId: map['remoteId'] as String?,
       name: map['name'] as String,
       room: map['room'] as String,
-      slots: slotsJson.map((s) => ScheduleSlot.fromMap(s as Map<String, dynamic>)).toList(),
+      slots: slotsJson
+          .map((s) => ScheduleSlot.fromMap(s as Map<String, dynamic>))
+          .toList(),
       colorValue: map['colorValue'] as int,
       units: (map['units'] as num?)?.toDouble() ?? 3.0,
       notes: map['notes'] as String? ?? '',

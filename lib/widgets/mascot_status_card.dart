@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 /// A reusable mascot status card that displays a dynamic mascot image
 /// with a contextual title and message inside a gradient banner.
@@ -24,8 +23,8 @@ class MascotStatusCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final Color primaryColor = Theme.of(context).colorScheme.primary;
-    final List<Color> colors = gradientColors ??
-        [primaryColor, primaryColor.withValues(alpha: 0.8)];
+    final List<Color> colors =
+        gradientColors ?? [primaryColor, primaryColor.withValues(alpha: 0.8)];
 
     return Container(
       margin: const EdgeInsets.only(top: 8),
@@ -87,7 +86,7 @@ class MascotStatusCard extends StatelessWidget {
                 children: [
                   Text(
                     statusTitle.toUpperCase(),
-                    style: GoogleFonts.inter(
+                    style: TextStyle(
                       fontSize: 10,
                       fontWeight: FontWeight.w900,
                       color: colors.first,
@@ -99,7 +98,7 @@ class MascotStatusCard extends StatelessWidget {
                     statusMessage,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
-                    style: GoogleFonts.inter(
+                    style: TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
                       color: Theme.of(context).colorScheme.onSurface,
