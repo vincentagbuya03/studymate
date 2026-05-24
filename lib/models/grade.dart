@@ -1,5 +1,6 @@
 class Grade {
   final int? id;
+  final String? remoteId;
   final String subject;
   final double score;
   final double maxScore;
@@ -8,6 +9,7 @@ class Grade {
 
   Grade({
     this.id,
+    this.remoteId,
     required this.subject,
     required this.score,
     required this.maxScore,
@@ -20,6 +22,7 @@ class Grade {
   Map<String, dynamic> toMap() {
     return {
       'id': id,
+      'remoteId': remoteId,
       'subject': subject,
       'score': score,
       'maxScore': maxScore,
@@ -31,6 +34,7 @@ class Grade {
   factory Grade.fromMap(Map<String, dynamic> map) {
     return Grade(
       id: map['id'],
+      remoteId: map['remoteId'],
       subject: map['subject'],
       score: map['score'],
       maxScore: map['maxScore'],

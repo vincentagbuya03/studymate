@@ -350,10 +350,8 @@ class NotificationService {
     if (kIsWeb) return;
     final bool canScheduleExactAlarms = await checkExactAlarmPermission();
 
-    for (int i = 0; i < _dailyReminderSlots; i++) {
-      await AlarmService.instance.stopAlarm(_dailyReminderIdBase + i);
-      await _cancelNotification(_dailyReminderIdBase + i);
-    }
+    await _cancelDailyReminderAlarms();
+    await _cancelDailyReminderNotifications();
 
     final DateTime now = DateTime.now();
     int scheduledCount = 0;
@@ -491,9 +489,12 @@ class NotificationService {
   }
 
   Future<void> _cancelDailyReminderAlarms() async {
-    for (int i = 0; i < _dailyReminderSlots; i++) {
-      await AlarmService.instance.stopAlarm(_dailyReminderIdBase + i);
-    }
+    await AlarmService.instance.stopAlarms(
+      List<int>.generate(
+        _dailyReminderSlots,
+        (int index) => _dailyReminderIdBase + index,
+      ),
+    );
   }
 
   Future<void> _cancelDailyReminderNotifications() async {

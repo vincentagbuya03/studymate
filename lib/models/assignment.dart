@@ -6,6 +6,7 @@ enum AssignmentPriority { low, medium, high }
 class Assignment {
   const Assignment({
     this.id,
+    this.remoteId,
     required this.title,
     required this.subject,
     required this.dueDate,
@@ -15,6 +16,7 @@ class Assignment {
   });
 
   final int? id;
+  final String? remoteId;
   final String title;
   final String subject;
   final DateTime dueDate;
@@ -57,6 +59,7 @@ class Assignment {
 
   Assignment copyWith({
     int? id,
+    String? remoteId,
     String? title,
     String? subject,
     DateTime? dueDate,
@@ -66,6 +69,7 @@ class Assignment {
   }) {
     return Assignment(
       id: id ?? this.id,
+      remoteId: remoteId ?? this.remoteId,
       title: title ?? this.title,
       subject: subject ?? this.subject,
       dueDate: dueDate ?? this.dueDate,
@@ -78,6 +82,7 @@ class Assignment {
   Map<String, Object?> toMap() {
     return <String, Object?>{
       'id': id,
+      'remoteId': remoteId,
       'title': title,
       'subject': subject,
       'dueDate': dueDate.toIso8601String(),
@@ -90,6 +95,7 @@ class Assignment {
   factory Assignment.fromMap(Map<String, Object?> map) {
     return Assignment(
       id: map['id'] as int?,
+      remoteId: map['remoteId'] as String?,
       title: map['title'] as String,
       subject: map['subject'] as String,
       dueDate: DateTime.parse(map['dueDate'] as String),

@@ -165,7 +165,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     return Scaffold(
       body: Stack(
         children: [
-          // Background Gradient with Animated Transition
           AnimatedContainer(
             duration: const Duration(milliseconds: 800),
             decoration: BoxDecoration(

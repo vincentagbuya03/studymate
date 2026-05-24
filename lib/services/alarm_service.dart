@@ -68,8 +68,24 @@ class AlarmService {
   }
 
   Future<void> stopAlarm(int id) async {
-    await Alarm.stop(id);
-    debugPrint('[AlarmService] Alarm stopped for ID $id');
+    await stopAlarms(<int>[id]);
+  }
+
+  Future<void> stopAlarms(Iterable<int> ids) async {
+    final Set<int> requestedIds = ids.toSet();
+    if (requestedIds.isEmpty) {
+      return;
+    }
+
+    final alarms = await Alarm.getAlarms();
+    for (final alarm in alarms) {
+      if (!requestedIds.contains(alarm.id)) {
+        continue;
+      }
+
+      await Alarm.stop(alarm.id);
+      debugPrint('[AlarmService] Alarm stopped for ID ${alarm.id}');
+    }
   }
 
   Future<void> stopAllAlarms() async {
@@ -86,10 +102,9 @@ class AlarmService {
 
   Future<List<AlarmSettings>> getScheduledAlarms() async {
     final alarms = await Alarm.getAlarms();
-    return alarms.toList()
-      ..sort(
-        (AlarmSettings a, AlarmSettings b) => a.dateTime.compareTo(b.dateTime),
-      );
+    return alarms.toList()..sort(
+      (AlarmSettings a, AlarmSettings b) => a.dateTime.compareTo(b.dateTime),
+    );
   }
 
   ValueStream<AlarmSet> get ringingStream => Alarm.ringing;

@@ -2,9 +2,12 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/assignment.dart';
 import '../models/subject.dart';
+import '../services/analytics_service.dart';
+import '../widgets/rate_studymate_dialog.dart';
 import '../widgets/mascot_status_card.dart';
 import '../widgets/subject_card.dart';
 
@@ -39,6 +42,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Timer? _clockTimer;
 
+  // In-memory static flag to prevent double prompting and async race conditions
+  static bool _hasPromptedRatingThisSession = false;
+
   @override
   void initState() {
     super.initState();
@@ -47,6 +53,64 @@ class _HomeScreenState extends State<HomeScreen> {
         setState(() {});
       }
     });
+    _checkAndPromptRating();
+  }
+
+  Future<void> _checkAndPromptRating() async {
+    if (_hasPromptedRatingThisSession) {
+      return;
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+
+      try {
+        final SharedPreferences prefs = await SharedPreferences.getInstance();
+        final bool hasRatedLocal = prefs.getBool('app_rated_locally') ?? false;
+        if (hasRatedLocal) {
+          return;
+        }
+
+        // Lock prompting immediately to block any parallel checking
+        _hasPromptedRatingThisSession = true;
+
+        final AppReview? review = await AnalyticsService.instance.getMyReview();
+        if (review != null) {
+          await prefs.setBool('app_rated_locally', true);
+          return;
+        }
+
+        if (mounted) {
+          _showRateDialog();
+        }
+      } catch (e) {
+        debugPrint('Error checking rating status: $e');
+      }
+    });
+  }
+
+  Future<void> _showRateDialog() async {
+    final AppReview? submittedReview = await showRateStudyMateDialog(
+      context: context,
+      studentName: widget.studentName,
+    );
+
+    if (submittedReview == null) {
+      return;
+    }
+
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('app_rated_locally', true);
+
+    if (!mounted) {
+      return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Thanks! Your review is now on the download page.'),
+      ),
+    );
   }
 
   @override
