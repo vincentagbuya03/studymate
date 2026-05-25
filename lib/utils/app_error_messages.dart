@@ -13,6 +13,8 @@ String friendlyAuthError(Object error) {
   if (error is FirebaseAuthException) {
     final String code = error.code.toLowerCase();
     switch (code) {
+      case 'unauthorized-domain':
+        return 'Google sign-in is blocked for this domain. Add this site (studymates-app.vercel.app) in Firebase Console → Authentication → Settings → Authorized domains.';
       case 'account-exists-with-different-credential':
         return 'This email is already linked to another sign-in method.';
       case 'invalid-credential':
@@ -23,11 +25,18 @@ String friendlyAuthError(Object error) {
         return 'You seem to be offline. Check your connection and try again.';
       case 'operation-not-allowed':
         return 'Google sign-in is not enabled for this app yet.';
+      case 'popup-blocked':
+        return 'Your browser blocked the sign-in popup. Allow pop-ups for this site and try again.';
+      case 'cancelled-popup-request':
+        return 'Another sign-in popup is already open. Close it and try again.';
       case 'popup-closed-by-user':
       case 'web-context-cancelled':
         return 'Sign-in was cancelled. No changes were made.';
       case 'too-many-requests':
         return 'Too many sign-in attempts. Please wait a moment and try again.';
+      case 'invalid-api-key':
+      case 'app-not-authorized':
+        return 'Firebase web config looks invalid for this deployment. Please confirm the correct Firebase Web app is configured and redeploy.';
       case 'google_sign_in_unsupported':
         return 'Google sign-in is not supported on this device.';
       case 'missing_google_id_token':

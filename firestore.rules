@@ -20,9 +20,6 @@ service cloud.firestore {
       return userExists(uid) &&
         get(userDocPath(uid)).data.disabled != true;
     }
-    function userEnabledOrMissing(uid) {
-      return !userExists(uid) || userEnabled(uid);
-    }
     function validPublicMetrics() {
       return request.resource.data.keys().hasOnly([
         'studentCount',
@@ -77,8 +74,8 @@ service cloud.firestore {
         isSelf(uid) &&
         request.resource.data.disabled == false
       );
-      allow get: if isAdmin() || (isSelf(uid) && userEnabledOrMissing(uid));
-      allow list: if isAdmin() || (isSelf(uid) && userEnabledOrMissing(uid));
+      allow get: if isAdmin() || isSelf(uid);
+      allow list: if isAdmin() || isSelf(uid);
       allow update: if isAdmin() ||
         (
           isSelf(uid) &&

@@ -17,6 +17,8 @@ class _AppDownloadScreenState extends State<AppDownloadScreen> {
   AppPublicMetrics _metrics = AppPublicMetrics.fallback;
   List<AppReview> _reviews = const <AppReview>[];
   bool _isLoading = true;
+  bool _metricsAvailable = true;
+  bool _reviewsAvailable = true;
   StreamSubscription<AppPublicMetrics>? _metricsSubscription;
   StreamSubscription<List<AppReview>>? _reviewsSubscription;
 
@@ -34,10 +36,17 @@ class _AppDownloadScreenState extends State<AppDownloadScreen> {
             setState(() {
               _metrics = metrics;
               _isLoading = false;
+              _metricsAvailable = true;
             });
           },
           onError: (Object error) {
             debugPrint('Could not watch public metrics: $error');
+            if (mounted) {
+              setState(() {
+                _isLoading = false;
+                _metricsAvailable = false;
+              });
+            }
           },
         );
     _reviewsSubscription = AnalyticsService.instance
@@ -49,10 +58,16 @@ class _AppDownloadScreenState extends State<AppDownloadScreen> {
             }
             setState(() {
               _reviews = reviews;
+              _reviewsAvailable = true;
             });
           },
           onError: (Object error) {
             debugPrint('Could not watch public reviews: $error');
+            if (mounted) {
+              setState(() {
+                _reviewsAvailable = false;
+              });
+            }
           },
         );
   }
@@ -65,14 +80,27 @@ class _AppDownloadScreenState extends State<AppDownloadScreen> {
   }
 
   Future<void> _loadMetrics() async {
-    final metrics = await AnalyticsService.instance.getPublicMetrics();
-    if (!mounted) {
-      return;
+    try {
+      final metrics = await AnalyticsService.instance
+          .getPublicMetrics()
+          .timeout(const Duration(seconds: 4));
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _metrics = metrics;
+        _isLoading = false;
+        _metricsAvailable = true;
+      });
+    } catch (e) {
+      debugPrint('Error loading metrics in download screen: $e');
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _metricsAvailable = false;
+        });
+      }
     }
-    setState(() {
-      _metrics = metrics;
-      _isLoading = false;
-    });
   }
 
   Future<void> _handleDownload() async {
@@ -420,6 +448,22 @@ class _AppDownloadScreenState extends State<AppDownloadScreen> {
         const SizedBox(height: 40),
         _isLoading
             ? const CircularProgressIndicator()
+            : !_metricsAvailable
+            ? Column(
+                crossAxisAlignment: isCenter
+                    ? CrossAxisAlignment.center
+                    : CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _buildMiniStat('—', 'Students'),
+                      const SizedBox(width: 32),
+                      _buildMiniStat('—', 'Rating'),
+                    ],
+                  ),
+                ],
+              )
             : Column(
                 crossAxisAlignment: isCenter
                     ? CrossAxisAlignment.center
@@ -524,10 +568,6 @@ class _AppDownloadScreenState extends State<AppDownloadScreen> {
   }
 
   Widget _buildReviewsSection(bool isMobile) {
-    if (_reviews.isEmpty) {
-      return const SizedBox.shrink();
-    }
-
     return Container(
       width: double.infinity,
       color: Colors.black,
@@ -549,12 +589,35 @@ class _AppDownloadScreenState extends State<AppDownloadScreen> {
                   color: Colors.white,
                 ),
               ),
-              const SizedBox(height: 28),
-              Wrap(
-                spacing: 18,
-                runSpacing: 18,
-                children: _reviews.map(_buildReviewCard).toList(),
-              ),
+              const SizedBox(height: 12),
+              if (!_reviewsAvailable)
+                const Text(
+                  'Reviews are unavailable right now.',
+                  style: TextStyle(
+                    color: Color(0xFF94A3B8),
+                    fontSize: 15,
+                    height: 1.5,
+                    fontWeight: FontWeight.w500,
+                  ),
+                )
+              else if (_reviews.isEmpty)
+                const Text(
+                  'No reviews yet.',
+                  style: TextStyle(
+                    color: Color(0xFF94A3B8),
+                    fontSize: 15,
+                    height: 1.5,
+                    fontWeight: FontWeight.w500,
+                  ),
+                )
+              else ...[
+                const SizedBox(height: 16),
+                Wrap(
+                  spacing: 18,
+                  runSpacing: 18,
+                  children: _reviews.map(_buildReviewCard).toList(),
+                ),
+              ],
             ],
           ),
         ),
