@@ -21,10 +21,23 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
   String _sortBy = 'Joined Date (Newest)';
   late final TextEditingController _searchController;
 
+  String? _tokenUid;
+  Future<IdTokenResult>? _tokenFuture;
+
   @override
   void initState() {
     super.initState();
     _searchController = TextEditingController();
+  }
+
+  Future<IdTokenResult> _getAdminToken(User user) {
+    if (_tokenUid != user.uid || _tokenFuture == null) {
+      _tokenUid = user.uid;
+      _tokenFuture = user
+          .getIdTokenResult(true)
+          .timeout(const Duration(seconds: 12));
+    }
+    return _tokenFuture!;
   }
 
   @override
@@ -986,8 +999,58 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
         ],
       ),
       body: FutureBuilder<IdTokenResult>(
-        future: FirebaseAuth.instance.currentUser?.getIdTokenResult(true),
+        future: () {
+          final user = FirebaseAuth.instance.currentUser;
+          if (user == null) {
+            return null;
+          }
+          return _getAdminToken(user);
+        }(),
         builder: (context, tokenSnapshot) {
+          if (FirebaseAuth.instance.currentUser == null) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.lock_outline_rounded, size: 40),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'Please sign in to access the admin panel.',
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 12),
+                    FilledButton(
+                      onPressed: () {
+                        Navigator.of(
+                          context,
+                        ).pushReplacementNamed('/admin-login');
+                      },
+                      child: const Text('Go to admin login'),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }
+
+          if (tokenSnapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          if (tokenSnapshot.hasError) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Text(
+                  'Admin access could not be verified. Please check your connection and try reloading.\n\n${tokenSnapshot.error}',
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            );
+          }
+
           if (!tokenSnapshot.hasData) {
             return const Center(child: CircularProgressIndicator());
           }

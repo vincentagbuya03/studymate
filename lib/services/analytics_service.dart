@@ -47,6 +47,30 @@ class AnalyticsService {
   CollectionReference<Map<String, dynamic>> get _reviewsRef =>
       _firestore.collection('publicReviews');
 
+  /// Increments the public student count used by the web download page.
+  ///
+  /// This is best-effort; failures are logged but not rethrown.
+  Future<void> incrementStudentCount() async {
+    try {
+      await _firestore.runTransaction((transaction) async {
+        final metricsSnapshot = await transaction.get(_metricsRef);
+        final metricsData = metricsSnapshot.data();
+        final int currentStudentCount = metricsData?['studentCount'] is int
+            ? metricsData!['studentCount'] as int
+            : metricsData?['downloadCount'] is int
+            ? metricsData!['downloadCount'] as int
+            : AppPublicMetrics.fallback.studentCount;
+
+        transaction.set(_metricsRef, <String, dynamic>{
+          'studentCount': (currentStudentCount + 1).clamp(0, 1 << 31),
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      });
+    } catch (e) {
+      debugPrint('[Analytics] Could not increment studentCount: $e');
+    }
+  }
+
   Stream<AppPublicMetrics> watchPublicMetrics() {
     return _metricsRef.snapshots().map((snapshot) {
       return _metricsFromData(snapshot.data());
@@ -68,7 +92,9 @@ class AnalyticsService {
 
   Future<AppPublicMetrics> getPublicMetrics() async {
     try {
-      final snapshot = await _metricsRef.get();
+      final snapshot = await _metricsRef.get().timeout(
+        const Duration(seconds: 4),
+      );
       return _metricsFromData(snapshot.data());
     } catch (e) {
       debugPrint('[Analytics] Public metrics unavailable: $e');

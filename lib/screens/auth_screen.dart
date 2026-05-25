@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -135,6 +136,14 @@ class _AuthScreenState extends State<AuthScreen> with TickerProviderStateMixin {
 
     try {
       await AuthService.instance.signInWithGoogle();
+      if (mounted) {
+        final routeName = ModalRoute.of(context)?.settings.name;
+        if (routeName == '/login') {
+          Navigator.of(context).pushReplacementNamed(kIsWeb ? '/app' : '/');
+        } else if (routeName == '/admin-login') {
+          Navigator.of(context).pushReplacementNamed('/admin');
+        }
+      }
     } on PlatformException catch (e) {
       if (!mounted) {
         return;

@@ -47,3 +47,4 @@ app.*.map.json
 .env*.local
 scripts/serviceAccountKey.json
 scripts/*firebase-adminsdk*.json
+scripts/node_modules/

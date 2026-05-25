@@ -147,6 +147,21 @@ class _StudyMateAppState extends State<StudyMateApp>
       await AuthService.instance.ensureUserProfile(
         seedDisplayNameFromEmail: !isFirstOpen,
       );
+    } on FirebaseException catch (e) {
+      debugPrint(
+        '[Auth Bootstrap] Profile sync failed: ${e.code} ${e.message}',
+      );
+      if (e.code == 'permission-denied') {
+        await AuthService.instance.signOut();
+        if (mounted) {
+          setState(() {
+            _disabledMessage =
+                'StudyMate could not open your profile. Please check that Firestore rules are deployed, then try again.';
+            _isLoading = false;
+          });
+        }
+        return;
+      }
     } catch (e) {
       debugPrint('[Auth Bootstrap] Profile sync unavailable: $e');
     }
@@ -173,40 +188,35 @@ class _StudyMateAppState extends State<StudyMateApp>
   }
 
   void _startCloudListeners() {
-    _profileSubscription = _plannerService.watchUserProfile().listen((
-      snapshot,
-    ) async {
-      final data = snapshot.data();
-      if (data == null) {
-        return;
-      }
-      if (data['disabled'] == true) {
-        await _notificationService.cancelTrackedNotifications(
-          assignments: _assignments,
-          exams: _exams,
-        );
-        await AuthService.instance.signOut();
-        if (mounted) {
-          setState(() {
-            _disabledMessage = 'This StudyMate account has been disabled.';
-          });
+    _profileSubscription = _plannerService.watchUserProfile().listen(
+      (snapshot) async {
+        final data = snapshot.data();
+        if (data == null) {
+          return;
         }
-        return;
-      }
+        if (data['disabled'] == true) {
+          await _handleDisabledAccount();
+          return;
+        }
 
-      final String? displayName = data['displayName'] as String?;
-      if (displayName != null && displayName.trim().isNotEmpty) {
-        final String trimmedDisplayName = displayName.trim();
-        if (mounted && _studentName != trimmedDisplayName) {
-          setState(() {
-            _studentName = trimmedDisplayName;
-          });
-          if (!_isFirstOpen) {
-            await _refreshNotifications();
+        final String? displayName = data['displayName'] as String?;
+        if (displayName != null && displayName.trim().isNotEmpty) {
+          final String trimmedDisplayName = displayName.trim();
+          if (mounted && _studentName != trimmedDisplayName) {
+            setState(() {
+              _studentName = trimmedDisplayName;
+            });
+            if (!_isFirstOpen) {
+              await _refreshNotifications();
+            }
           }
         }
-      }
-    });
+      },
+      onError: (Object error) {
+        debugPrint('[Auth Profile] Listener failed: $error');
+        _handleCloudPermissionError(error);
+      },
+    );
 
     _plannerSubscription = _plannerService.watchPlanner().listen(
       (PlannerSnapshot snapshot) async {
@@ -226,13 +236,46 @@ class _StudyMateAppState extends State<StudyMateApp>
         await _refreshNotifications();
       },
       onError: (Object error) {
-        if (mounted) {
-          setState(() {
-            _disabledMessage = error.toString();
-          });
-        }
+        debugPrint('[Planner Sync] Listener failed: $error');
+        _handleCloudPermissionError(error);
       },
     );
+  }
+
+  Future<void> _handleDisabledAccount() async {
+    await _notificationService.cancelTrackedNotifications(
+      assignments: _assignments,
+      exams: _exams,
+    );
+    await AuthService.instance.signOut();
+    if (mounted) {
+      setState(() {
+        _disabledMessage = 'This StudyMate account has been disabled.';
+        _isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _handleCloudPermissionError(Object error) async {
+    final String raw = error.toString().toLowerCase();
+    if (!raw.contains('permission-denied') &&
+        !raw.contains('permission_denied')) {
+      if (mounted) {
+        setState(() {
+          _disabledMessage = error.toString();
+        });
+      }
+      return;
+    }
+
+    await AuthService.instance.signOut();
+    if (mounted) {
+      setState(() {
+        _disabledMessage =
+            'StudyMate could not access your cloud profile. Please deploy the latest Firestore rules and sign in again.';
+        _isLoading = false;
+      });
+    }
   }
 
   StreamSubscription? _ringingSubscription;
@@ -279,10 +322,18 @@ class _StudyMateAppState extends State<StudyMateApp>
     String body,
   ) {
     if (!mounted || _isAlarmScreenShowing) return;
+    final NavigatorState? navigator = _navigatorKey.currentState;
+    if (navigator == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _showAlarmRingScreen(alarmId, alarmDateTime, title, body);
+      });
+      return;
+    }
+
     _isAlarmScreenShowing = true;
 
-    _navigatorKey.currentState
-        ?.push<bool>(
+    navigator
+        .push<bool>(
           MaterialPageRoute<bool>(
             builder: (context) =>
                 AlarmRingScreen(alarmId: alarmId, title: title, body: body),
